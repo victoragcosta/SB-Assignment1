@@ -10,11 +10,9 @@ EXT = .cpp
 CFLAGS = -Wall -g -I $(IDIR)
 LIBS = -lm
 
-# Caminhos até pastas importantes (arquivos .h, bibliotecas externas,
-# arquivos .o, arquivos com testes e, opcionalmente, arquivos do gcov).
+# Caminhos até pastas importantes (arquivos src, arquivos .h e arquivos .o).
 
 IDIR = include
-LDIR = lib
 ODIR = src/obj
 SDIR = src
 
@@ -66,7 +64,6 @@ structure:
 	# Criação das pastas do projeto.
 
 	mkdir include
-	mkdir lib
 	mkdir src
 	mkdir src/obj
 

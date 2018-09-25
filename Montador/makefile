@@ -14,7 +14,6 @@ LIBS = -lm
 # arquivos .o, arquivos com testes e, opcionalmente, arquivos do gcov).
 
 IDIR = include
-LDIR = lib
 ODIR = src/obj
 SDIR = src
 
@@ -66,7 +65,6 @@ structure:
 	# Criação das pastas do projeto.
 
 	mkdir include
-	mkdir lib
 	mkdir src
 	mkdir src/obj
 
