@@ -9,17 +9,22 @@
 // Namespace:
 using namespace std;
 
+// Function headers:
+bool valid_label(string);
+string format_line(string);
+
 // Main function:
 int main(int argc, char const *argv[]) {
 
   fstream asm_file, pre_file;
 
   map <string, string> aliases_table;
-  map <string, int> symbol_table;
+  map <string, int> symbols_table;
 
-  regex comment(";.*"), first_space("^ "), spaces(" +") , tabs("\t+");
+  regex equ_directive("([a-zA-Z0-9_]+): EQU ([a-zA-Z0-9_]+)");
+  smatch regex_matches;
 
-  string file_name, file_line;
+  string file_name, file_line, formated_line, label, value;
 
   if(argc != 2) {
       cerr << "Incorrect number of files given to function." << endl;
@@ -42,19 +47,64 @@ int main(int argc, char const *argv[]) {
   pre_file.open(file_name + ".pre", ios::out);
 
   while (getline(asm_file, file_line)) {
-    file_line = regex_replace(file_line, comment, "");
-    file_line = regex_replace(file_line, tabs, " ");
-    file_line = regex_replace(file_line, spaces, " ");
-    file_line = regex_replace(file_line, first_space, "");
-    // cout << file_line << endl;
-    if(file_line != "")
-      pre_file << file_line << endl;
+
+    formated_line = format_line(file_line);   // Remove comments and extras.
+
+    if(regex_search(formated_line, regex_matches, equ_directive)) {
+
+      label = regex_matches[1].str();
+      value = regex_matches[2].str();
+
+      if(valid_label(label))
+        aliases_table[label] = value;
+
+      else {
+        cerr << "[ERROR - Pre-processing] An invalid symbol was aliased: ";
+        cerr << label << endl;
+        cerr << "Exiting!" << endl;
+        exit(3);
+      }
+
+    }
+
+    else if(formated_line != "")
+      pre_file << formated_line << endl;
+
   }
 
   asm_file.close();
   pre_file.close();
 
+  for(auto const& pair : aliases_table) {
+    cout << pair.first << ': ' << pair.second << endl;
+  }
+
   return 0;
+
+}
+
+// Function implementations:
+bool valid_label(string label) {
+
+  bool valid = true;
+
+  if(label.length() > 50 || !isalpha(label.at(0)))
+    valid = false;
+
+  return valid;
+
+}
+
+string format_line(string line) {
+
+  regex comment(";.*"), first_space("^ "), spaces_and_tabs("[ \t]+");
+  string formated_line;
+
+  formated_line = regex_replace(line, comment, "");
+  formated_line = regex_replace(formated_line, spaces_and_tabs, " ");
+  formated_line = regex_replace(formated_line, first_space, "");
+
+  return formated_line;
 
 }
 
