@@ -1,7 +1,9 @@
 // Software básico - Trabalho 02 - Montador
 
 // Includes:
+#include <fstream>
 #include <iostream>
+#include <regex>
 #include <string>
 
 // Namespace:
@@ -10,13 +12,30 @@ using namespace std;
 // Main function:
 int main(int argc, char const *argv[]) {
 
-  map <string, int> symbolTable;
+  fstream asm_file, pre_file;
+
+  map <string, string> aliases_table;
+  map <string, int> symbol_table;
+
+  string file_name;
 
   if(argc != 2) {
       cerr << "Incorrect number of files given to function." << endl;
       cerr << "Exiting!" << endl;
       exit(1);
   }
+
+  file_name = argv[1];
+
+  asm_file.open(file_name + ".asm", ios::in);
+
+  if(!asm_file.is_open()) {
+    cerr << "Couldn't open file: " << file_name << ".asm" << endl;
+    cerr << "Exiting!" << endl;
+    exit(2);
+  }
+
+  asm_file.close();
 
   return 0;
 
@@ -47,5 +66,5 @@ Directive list:
     outputed to a .pre file.
     TODO Create data structures for the tables needed for the 2 loader passes.
     TODO Implement the first pass, that reads and stores the labels.
-    More to come... 
+    More to come...
 */
