@@ -17,7 +17,9 @@ int main(int argc, char const *argv[]) {
   map <string, string> aliases_table;
   map <string, int> symbol_table;
 
-  string file_name;
+  regex comment(";.*"), first_space("^ "), spaces(" +") , tabs("\t+");
+
+  string file_name, file_line;
 
   if(argc != 2) {
       cerr << "Incorrect number of files given to function." << endl;
@@ -35,7 +37,22 @@ int main(int argc, char const *argv[]) {
     exit(2);
   }
 
+  // Pre-processing pass:
+
+  pre_file.open(file_name + ".pre", ios::out);
+
+  while (getline(asm_file, file_line)) {
+    file_line = regex_replace(file_line, comment, "");
+    file_line = regex_replace(file_line, tabs, " ");
+    file_line = regex_replace(file_line, spaces, " ");
+    file_line = regex_replace(file_line, first_space, "");
+    // cout << file_line << endl;
+    if(file_line != "")
+      pre_file << file_line << endl;
+  }
+
   asm_file.close();
+  pre_file.close();
 
   return 0;
 
