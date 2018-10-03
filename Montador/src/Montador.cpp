@@ -3,6 +3,7 @@
 // Includes:
 #include <fstream>
 #include <iostream>
+#include <list>
 #include <regex>
 #include <string>
 
@@ -12,6 +13,7 @@ using namespace std;
 // Function headers:
 bool valid_label(string);
 string format_line(string);
+string replace_aliases(string, map <string, string>);
 
 // Main function:
 int main(int argc, char const *argv[]) {
@@ -48,7 +50,10 @@ int main(int argc, char const *argv[]) {
 
   while (getline(asm_file, file_line)) {
 
-    formated_line = format_line(file_line);   // Remove comments and extras.
+    formated_line = format_line(file_line);
+    formated_line = replace_aliases(formated_line, aliases_table);
+
+    // Checks if a line is an EQU directive.
 
     if(regex_search(formated_line, regex_matches, equ_directive)) {
 
@@ -67,6 +72,8 @@ int main(int argc, char const *argv[]) {
 
     }
 
+    // Checks if the line is empty or not.
+
     else if(formated_line != "")
       pre_file << formated_line << endl;
 
@@ -75,9 +82,9 @@ int main(int argc, char const *argv[]) {
   asm_file.close();
   pre_file.close();
 
-  for(auto const& pair : aliases_table) {
-    cout << pair.first << ': ' << pair.second << endl;
-  }
+  /* for(auto const& pair : aliases_table) {
+    cout << pair.first << ": " << pair.second << endl;
+  } */
 
   return 0;
 
@@ -100,11 +107,102 @@ string format_line(string line) {
   regex comment(";.*"), first_space("^ "), spaces_and_tabs("[ \t]+");
   string formated_line;
 
+  // Removes comments and extra tabs and spaces.
+
   formated_line = regex_replace(line, comment, "");
   formated_line = regex_replace(formated_line, spaces_and_tabs, " ");
   formated_line = regex_replace(formated_line, first_space, "");
 
+  // Converts the whole string to uppercase.
+
+  for (auto & c: formated_line)
+    c = toupper(c);
+
   return formated_line;
+
+}
+
+string replace_aliases(string line, map <string, string> aliases_table) {
+
+  list <string> words;
+  size_t position = 0;
+  string aux, modded_line = "", word;
+
+  // It might be a good idea to keep the original line intact.
+
+  aux = line;
+
+  // First, let's get rid of empty lines! Remember: we already formatted the
+  // line, so this corner case catches comments, empty lines, etc...
+
+  if(aux == "")
+    return line;
+
+  // Now we split the line along spaces and stores it's words in a list called
+  // words.
+
+  while((position = aux.find(" ")) != string::npos) {
+    word = aux.substr(0, position);
+    words.push_back(word);
+    aux.erase(0, position + 1);
+  }
+
+  words.push_back(aux);
+
+  // Now we have to go through each word and replace any alias with it's value,
+  // being careful to avoid messing with labels and section statements.
+  // Finally, we have to put the whole line back together. Sounds easy, right?
+
+  word = words.front();
+  words.pop_front();
+
+  // First let's see if the first word is a label.
+
+  if(word.find(":") != string::npos) {
+
+    // Maybe the line only had a label?
+
+    if(words.empty())
+      return line;
+
+    modded_line.append(word + " ");
+    word = words.front();
+    words.pop_front();
+
+  }
+
+  // Ok, now the next word should be an instruction or a directive. We should
+  // not replace those. We might even do a quick check to see if the line is a
+  // SECTION or a BEGIN directive or an instruction without parameters.
+
+  if(word == "SECTION" || word == "BEGIN" || words.empty())
+    return line;
+
+  else
+    modded_line.append(word);
+
+  // Almost there! Now we know that all remaining words are parameters. These
+  // should be checked against the aliases_table.
+
+  do {
+
+    word = words.front();
+    words.pop_front();
+
+    // Check to see if the word is in the aliases_table.
+
+    for(auto const& pair : aliases_table) {
+      if(word == pair.first) {
+        word = pair.second;
+        break;
+      }
+    }
+
+    modded_line.append(" " + word);
+
+  } while(!words.empty());
+
+  return modded_line;
 
 }
 
@@ -126,8 +224,6 @@ Directive list:
 */
 
 /* To-do list:
-    TODO Create file manipulation code. This should handle the files given by
-    arguments, handle the output files and handle possible errors.
     TODO Implement pre-processor pass. This pass should remove comments and
     evaluate the EQU and IF directives. The results from this pass need to be
     outputed to a .pre file.
