@@ -24,9 +24,10 @@ int main(int argc, char const *argv[]) {
   map <string, int> symbols_table;
 
   regex equ_directive("([a-zA-Z0-9_]+): EQU ([a-zA-Z0-9_]+)");
+  regex if_directive("IF (.*)");
   smatch regex_matches;
 
-  string file_name, file_line, formated_line, label, value;
+  string condition, file_name, file_line, formated_line, label, value;
 
   if(argc != 2) {
       cerr << "Incorrect number of files given to function." << endl;
@@ -53,7 +54,7 @@ int main(int argc, char const *argv[]) {
     formated_line = format_line(file_line);
     formated_line = replace_aliases(formated_line, aliases_table);
 
-    // Checks if a line is an EQU directive.
+    // Checks if the line is an EQU directive.
 
     if(regex_search(formated_line, regex_matches, equ_directive)) {
 
@@ -64,11 +65,33 @@ int main(int argc, char const *argv[]) {
         aliases_table[label] = value;
 
       else {
-        cerr << "[ERROR - Pre-processing] An invalid symbol was aliased: ";
-        cerr << label << endl;
+        cerr << "[ERROR - Pre-processing] An invalid symbol was aliased!";
+        cerr << endl;
+        cerr << "Symbol: " << label << endl;
         cerr << "Exiting!" << endl;
         exit(3);
       }
+
+    }
+
+    // Checks if the line is an IF directive.
+
+    else if(regex_search(formated_line, regex_matches, if_directive)) {
+
+      condition = regex_matches[1].str();
+
+      if(condition != "1" && condition != "0") {
+        cerr << "[ERROR - Pre-processing] An invalid condition was given to ";
+        cerr << "an IF directive! " << endl;
+        cerr << "Condition: " << condition << endl;
+        cerr << "Exiting!" << endl;
+        exit(4);
+      }
+
+      else if(condition == "0" && !asm_file.eof())
+        getline(asm_file, file_line);  // Discard the next line;
+
+      // If condtion == "1", then we don't need to do anything!
 
     }
 
@@ -224,9 +247,8 @@ Directive list:
 */
 
 /* To-do list:
-    TODO Implement pre-processor pass. This pass should remove comments and
-    evaluate the EQU and IF directives. The results from this pass need to be
-    outputed to a .pre file.
+    TODO Tweak pre-processor pass label handling. Labels in EQU directives
+    should be better examined and labels in IF directives should be examined.
     TODO Create data structures for the tables needed for the 2 loader passes.
     TODO Implement the first pass, that reads and stores the labels.
     More to come...
