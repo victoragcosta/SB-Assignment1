@@ -26,9 +26,9 @@ int main(int argc, char const *argv[]) {
   map <string, int> symbols_table;
 
   regex equ_directive("(.*): EQU (.*)");
-  regex if_directive("IF (.*)");
+  regex if_directive("(.*: )?IF (.*)");
   regex number("[0-9]+");
-  smatch regex_matches;
+  smatch search_matches;
 
   string condition, file_name, file_line, formated_line, label, value;
 
@@ -59,10 +59,10 @@ int main(int argc, char const *argv[]) {
 
     // Checks if the line is an EQU directive.
 
-    if(regex_search(formated_line, regex_matches, equ_directive)) {
+    if(regex_search(formated_line, search_matches, equ_directive)) {
 
-      label = regex_matches[1].str();
-      value = regex_matches[2].str();
+      label = search_matches[1].str();
+      value = search_matches[2].str();
 
       if(aliases_table.count(label) > 0)  {
         cerr << "[ERROR - Pre-processing] (Line " << line <<  ")" << endl;
@@ -98,9 +98,15 @@ int main(int argc, char const *argv[]) {
 
     // Checks if the line is an IF directive.
 
-    else if(regex_search(formated_line, regex_matches, if_directive)) {
+    else if(regex_search(formated_line, search_matches, if_directive)) {
 
-      condition = regex_matches[1].str();
+      label = search_matches[1].str();
+      condition = search_matches[2].str();
+
+      // We might get a label before the IF statement.
+
+      if(label != "")
+        pre_file << label << endl;
 
       if(condition != "1" && condition != "0") {
         cerr << "[ERROR - Pre-processing] (Line " << line <<  ")" << endl;
