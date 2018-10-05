@@ -80,10 +80,9 @@ int main(int argc, char const *argv[]) {
         exit(4);
       }
 
-      // I'm not 100% sure that values need to follow the same rules as labels.
-      // Let's estimate they are either numbers or labels.
+      // The value of an alias should always be a number.
 
-      else if(!regex_match(value, number) && !valid_label(value)) {
+      else if(!regex_match(value, number)) {
         cerr << "[ERROR - Pre-processing] (Line " << line <<  ")" << endl;
         cerr << "An invalid alias was chosen!" << endl;
         cerr << "Alias: " << value << endl;
@@ -281,8 +280,6 @@ Directive list:
 */
 
 /* To-do list:
-    TODO Tweak pre-processor pass label handling. Labels in EQU directives
-    should be better examined and labels in IF directives should be examined.
     TODO Create data structures for the tables needed for the 2 loader passes.
     TODO Implement the first pass, that reads and stores the labels.
     More to come...
