@@ -20,6 +20,8 @@ int main(int argc, char const *argv[]) {
 
   fstream asm_file, pre_file;
 
+  unsigned int line = 1;
+
   map <string, string> aliases_table;
   map <string, int> symbols_table;
 
@@ -63,16 +65,16 @@ int main(int argc, char const *argv[]) {
       value = regex_matches[2].str();
 
       if(aliases_table.count(label) > 0)  {
-        cerr << "[ERROR - Pre-processing] A symbol was aliased twice!";
-        cerr << endl;
+        cerr << "[ERROR - Pre-processing] (Line " << line <<  ")" << endl;
+        cerr << "A symbol was aliased twice!" << endl;
         cerr << "Symbol: " << label << endl;
         cerr << "Exiting!" << endl;
         exit(3);
       }
 
       else if(!valid_label(label)) {
-        cerr << "[ERROR - Pre-processing] An invalid symbol was aliased!";
-        cerr << endl;
+        cerr << "[ERROR - Pre-processing] (Line " << line <<  ")" << endl;
+        cerr << "An invalid symbol was aliased!" << endl;
         cerr << "Symbol: " << label << endl;
         cerr << "Exiting!" << endl;
         exit(4);
@@ -82,8 +84,8 @@ int main(int argc, char const *argv[]) {
       // Let's estimate they are either numbers or labels.
 
       else if(!regex_match(value, number) && !valid_label(value)) {
-        cerr << "[ERROR - Pre-processing] An invalid alias was chosen!";
-        cerr << endl;
+        cerr << "[ERROR - Pre-processing] (Line " << line <<  ")" << endl;
+        cerr << "An invalid alias was chosen!" << endl;
         cerr << "Alias: " << value << endl;
         cerr << "Exiting!" << endl;
         exit(4);
@@ -101,15 +103,17 @@ int main(int argc, char const *argv[]) {
       condition = regex_matches[1].str();
 
       if(condition != "1" && condition != "0") {
-        cerr << "[ERROR - Pre-processing] An invalid condition was given to ";
-        cerr << "an IF directive! " << endl;
+        cerr << "[ERROR - Pre-processing] (Line " << line <<  ")" << endl;
+        cerr << "An invalid condition was given to an IF directive!" << endl;
         cerr << "Condition: " << condition << endl;
         cerr << "Exiting!" << endl;
         exit(4);
       }
 
-      else if(condition == "0" && !asm_file.eof())
+      else if(condition == "0" && !asm_file.eof()) {
         getline(asm_file, file_line);  // Discard the next line;
+        line++;
+      }
 
       // If condtion == "1", then we don't need to do anything!
 
@@ -119,6 +123,8 @@ int main(int argc, char const *argv[]) {
 
     else if(formated_line != "")
       pre_file << formated_line << endl;
+
+    line++;
 
   }
 
