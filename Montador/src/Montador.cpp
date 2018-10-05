@@ -23,7 +23,7 @@ int main(int argc, char const *argv[]) {
   map <string, string> aliases_table;
   map <string, int> symbols_table;
 
-  regex equ_directive("([a-zA-Z0-9_]+): EQU ([a-zA-Z0-9_]+)");
+  regex equ_directive("(.*): EQU ([a-zA-Z0-9_]+)");
   regex if_directive("IF (.*)");
   smatch regex_matches;
 
@@ -61,16 +61,24 @@ int main(int argc, char const *argv[]) {
       label = regex_matches[1].str();
       value = regex_matches[2].str();
 
-      if(valid_label(label))
-        aliases_table[label] = value;
-
-      else {
-        cerr << "[ERROR - Pre-processing] An invalid symbol was aliased!";
+      if(aliases_table.count(label) > 0)  {
+        cerr << "[ERROR - Pre-processing] A symbol was aliased twice!";
         cerr << endl;
         cerr << "Symbol: " << label << endl;
         cerr << "Exiting!" << endl;
         exit(3);
       }
+
+      else if(!valid_label(label)) {
+        cerr << "[ERROR - Pre-processing] An invalid symbol was aliased!";
+        cerr << endl;
+        cerr << "Symbol: " << label << endl;
+        cerr << "Exiting!" << endl;
+        exit(4);
+      }
+
+      else
+        aliases_table[label] = value;
 
     }
 
@@ -117,8 +125,10 @@ int main(int argc, char const *argv[]) {
 bool valid_label(string label) {
 
   bool valid = true;
+  regex valid_chars("[a-zA-Z0-9_]+");
 
-  if(label.length() > 50 || !isalpha(label.at(0)))
+  if(label.length() > 50 || !isalpha(label.at(0))
+     || !regex_match(label, valid_chars))
     valid = false;
 
   return valid;
