@@ -23,8 +23,9 @@ int main(int argc, char const *argv[]) {
   map <string, string> aliases_table;
   map <string, int> symbols_table;
 
-  regex equ_directive("(.*): EQU ([a-zA-Z0-9_]+)");
+  regex equ_directive("(.*): EQU (.*)");
   regex if_directive("IF (.*)");
+  regex number("[0-9]+");
   smatch regex_matches;
 
   string condition, file_name, file_line, formated_line, label, value;
@@ -73,6 +74,17 @@ int main(int argc, char const *argv[]) {
         cerr << "[ERROR - Pre-processing] An invalid symbol was aliased!";
         cerr << endl;
         cerr << "Symbol: " << label << endl;
+        cerr << "Exiting!" << endl;
+        exit(4);
+      }
+
+      // I'm not 100% sure that values need to follow the same rules as labels.
+      // Let's estimate they are either numbers or labels.
+
+      else if(!regex_match(value, number) && !valid_label(value)) {
+        cerr << "[ERROR - Pre-processing] An invalid alias was chosen!";
+        cerr << endl;
+        cerr << "Alias: " << value << endl;
         cerr << "Exiting!" << endl;
         exit(4);
       }
