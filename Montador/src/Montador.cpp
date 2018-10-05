@@ -26,7 +26,7 @@ int main(int argc, char const *argv[]) {
   map <string, int> symbols_table;
 
   regex equ_directive("(.*): EQU (.*)");
-  regex if_directive("(.*: )?IF (.*)");
+  regex if_directive("(.*:)? ?IF (.*)");
   regex number("[0-9]+");
   smatch search_matches;
 
@@ -160,14 +160,17 @@ bool valid_label(string label) {
 
 string format_line(string line) {
 
-  regex comment(";.*"), first_space("^ "), spaces_and_tabs("[ \t]+");
+  regex colon(":"), comment(";.*"), first_space("^ "), last_space(" $");
+  regex spaces_and_tabs("[ \t]+");
   string formated_line;
 
   // Removes comments and extra tabs and spaces.
 
   formated_line = regex_replace(line, comment, "");
+  formated_line = regex_replace(formated_line, colon, ": ");
   formated_line = regex_replace(formated_line, spaces_and_tabs, " ");
   formated_line = regex_replace(formated_line, first_space, "");
+  formated_line = regex_replace(formated_line, last_space, "");
 
   // Converts the whole string to uppercase.
 
