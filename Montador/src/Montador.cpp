@@ -6,6 +6,7 @@
 #include <list>
 #include <regex>
 #include <string>
+#include <map>
 
 // Namespace:
 using namespace std;
@@ -18,13 +19,20 @@ string replace_aliases(string, map <string, string>);
 // Main function:
 int main(int argc, char const *argv[]) {
 
+  // Streams for assembly and preprocessed files
   fstream asm_file, pre_file;
 
+  // Original file line counter
   unsigned int line = 1;
+  // Pre-processed file line counter
+  unsigned int pre_line = 1;
 
+  // Table for EQU directives
   map <string, string> aliases_table;
+  // Table generated in the first pass to be used in the second pass
   map <string, int> symbols_table;
 
+  // Regular expressions for EQU directive, IF directive and numbers
   regex equ_directive("(.*): EQU (.*)");
   regex if_directive("(.*:)? ?IF (.*)");
   regex number("[0-9]+");
@@ -32,16 +40,20 @@ int main(int argc, char const *argv[]) {
 
   string condition, file_name, file_line, formated_line, label, value;
 
+  // Tests if there is program name and file to be assembled
   if(argc != 2) {
       cerr << "Incorrect number of files given to function." << endl;
       cerr << "Exiting!" << endl;
       exit(1);
   }
 
+  // Gets assembly file name
   file_name = argv[1];
 
+  // Tries to open file stream
   asm_file.open(file_name + ".asm", ios::in);
 
+  // Exits if there's no file to be opened
   if(!asm_file.is_open()) {
     cerr << "Couldn't open file: " << file_name << ".asm" << endl;
     cerr << "Exiting!" << endl;
@@ -50,11 +62,17 @@ int main(int argc, char const *argv[]) {
 
   // Pre-processing pass:
 
+  // Tries to create a new file for pre-processed output
   pre_file.open(file_name + ".pre", ios::out);
 
+  /* TODO Check if pre_file was created (opened) */
+
+  // Iterate over the original code file
   while (getline(asm_file, file_line)) {
 
+    // Removes comments and replaces extra spaces
     formated_line = format_line(file_line);
+    // Replaces EQU directives
     formated_line = replace_aliases(formated_line, aliases_table);
 
     // Checks if the line is an EQU directive.
@@ -64,6 +82,7 @@ int main(int argc, char const *argv[]) {
       label = search_matches[1].str();
       value = search_matches[2].str();
 
+      // TODO: print error type
       if(aliases_table.count(label) > 0)  {
         cerr << "[ERROR - Pre-processing] (Line " << line <<  ")" << endl;
         cerr << "A symbol was aliased twice!" << endl;
@@ -72,6 +91,7 @@ int main(int argc, char const *argv[]) {
         exit(3);
       }
 
+      // TODO: print error type
       else if(!valid_label(label)) {
         cerr << "[ERROR - Pre-processing] (Line " << line <<  ")" << endl;
         cerr << "An invalid symbol was aliased!" << endl;
@@ -82,6 +102,7 @@ int main(int argc, char const *argv[]) {
 
       // The value of an alias should always be a number.
 
+      // TODO: print error type
       else if(!regex_match(value, number)) {
         cerr << "[ERROR - Pre-processing] (Line " << line <<  ")" << endl;
         cerr << "An invalid alias was chosen!" << endl;
@@ -104,9 +125,13 @@ int main(int argc, char const *argv[]) {
 
       // We might get a label before the IF statement.
 
-      if(label != "")
+      // TODO: Generate error when there's a label before IF
+      if(label != "") {
         pre_file << label << endl;
+        pre_line++;
+      }
 
+      // TODO: print error type
       if(condition != "1" && condition != "0") {
         cerr << "[ERROR - Pre-processing] (Line " << line <<  ")" << endl;
         cerr << "An invalid condition was given to an IF directive!" << endl;
@@ -126,15 +151,35 @@ int main(int argc, char const *argv[]) {
 
     // Checks if the line is empty or not.
 
-    else if(formated_line != "")
+    else if(formated_line != "") {
       pre_file << formated_line << endl;
+      pre_line++;
+    }
 
     line++;
 
   }
-
-  asm_file.close();
   pre_file.close();
+  asm_file.close();
+
+  // First pass:
+
+  // Open pre-processed file to create symbols tables
+  pre_file.open(file_name + ".pre", ios::in);
+
+  // Tests if it has opened (should open, but better safe than sorry)
+  if (!pre_file.is_open()) {
+    cerr << "Couldn't open file: " << file_name << ".pre" << endl;
+    cerr << "Exiting!" << endl;
+    exit(2);
+  }
+
+  while (getline(pre_file, file_line)){
+    // TODO
+  }
+
+  // Second pass:
+
 
   /* for(auto const& pair : aliases_table) {
     cout << pair.first << ": " << pair.second << endl;
@@ -200,6 +245,7 @@ string replace_aliases(string line, map <string, string> aliases_table) {
   // Now we split the line along spaces and stores it's words in a list called
   // words.
 
+  /* TODO: create split function for better readability */
   while((position = aux.find(" ")) != string::npos) {
     word = aux.substr(0, position);
     words.push_back(word);

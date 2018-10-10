@@ -29,6 +29,8 @@ Para executar o ligador basta chamar ```./Ligador arquivo1 arquivo2 arquivo3 arq
 
 * Léxicos:
   * tokens inválidos (EQU e IF)
+* Sintáticos:
+  * label antes de IF
 
 ### Passagem 1:
 
@@ -43,11 +45,9 @@ Para executar o ligador basta chamar ```./Ligador arquivo1 arquivo2 arquivo3 arq
 
 ### Passagem 2:
 
-* Léxicos:
+* Sintáticos:
   * instruções inválidas
   * diretivas inválidas
-
-* Sintáticos:
   * divisão por zero (para constante)
   * instruções com a quantidade de operando inválida
   * tipo de argumento inválido

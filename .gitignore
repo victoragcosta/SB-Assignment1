@@ -27,6 +27,10 @@
 *.lib
 
 # Executables
+*/Montador
+*/montador
+*/Ligador
+*/ligador
 *.exe
 *.out
 *.app
