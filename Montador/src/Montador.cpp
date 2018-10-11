@@ -8,11 +8,21 @@
 #include <string>
 #include <map>
 
+// Enumerations:
+typedef enum {
+  NORMAL,
+  FATAL,
+  LEXICAL,
+  SYNTACTIC,
+  SEMANTIC
+} ErrorType;
+
 // Namespace:
 using namespace std;
 
 // Function headers:
 bool valid_label(string);
+int print_error(ErrorType, int, string);
 string format_line(string);
 string replace_aliases(string, map <string, string>);
 
@@ -38,11 +48,12 @@ int main(int argc, char const *argv[]) {
   regex number("[0-9]+");
   smatch search_matches;
 
-  string condition, file_name, file_line, formated_line, label, value;
+  string condition, error_msg, file_name, file_line, formated_line, label;
+  string value;
 
   // Tests if there is program name and file to be assembled
   if(argc != 2) {
-      cerr << "Incorrect number of files given to function." << endl;
+      print_error(FATAL, 0, "Incorrect number of arguments given to function.");
       cerr << "Exiting!" << endl;
       exit(1);
   }
@@ -55,7 +66,7 @@ int main(int argc, char const *argv[]) {
 
   // Exits if there's no file to be opened
   if(!asm_file.is_open()) {
-    cerr << "Couldn't open file: " << file_name << ".asm" << endl;
+    print_error(FATAL, 0, "Couldn't open file: " + file_name + ".asm");
     cerr << "Exiting!" << endl;
     exit(2);
   }
@@ -65,7 +76,11 @@ int main(int argc, char const *argv[]) {
   // Tries to create a new file for pre-processed output
   pre_file.open(file_name + ".pre", ios::out);
 
-  /* TODO Check if pre_file was created (opened) */
+  if(!pre_file.is_open()) {
+    print_error(FATAL, 0, "Couldn't create file: " + file_name + ".pre");
+    cerr << "Exiting!" << endl;
+    exit(2);
+  }
 
   // Iterate over the original code file
   while (getline(asm_file, file_line)) {
@@ -82,33 +97,18 @@ int main(int argc, char const *argv[]) {
       label = search_matches[1].str();
       value = search_matches[2].str();
 
-      // TODO: print error type
       if(aliases_table.count(label) > 0)  {
-        cerr << "[ERROR - Pre-processing] (Line " << line <<  ")" << endl;
-        cerr << "A symbol was aliased twice!" << endl;
-        cerr << "Symbol: " << label << endl;
-        cerr << "Exiting!" << endl;
-        exit(3);
+        print_error(SEMANTIC, line, "A symbol was aliased twice!");
       }
 
-      // TODO: print error type
       else if(!valid_label(label)) {
-        cerr << "[ERROR - Pre-processing] (Line " << line <<  ")" << endl;
-        cerr << "An invalid symbol was aliased!" << endl;
-        cerr << "Symbol: " << label << endl;
-        cerr << "Exiting!" << endl;
-        exit(4);
+        print_error(LEXICAL, line, "An invalid symbol was aliased!");
       }
 
       // The value of an alias should always be a number.
 
-      // TODO: print error type
       else if(!regex_match(value, number)) {
-        cerr << "[ERROR - Pre-processing] (Line " << line <<  ")" << endl;
-        cerr << "An invalid alias was chosen!" << endl;
-        cerr << "Alias: " << value << endl;
-        cerr << "Exiting!" << endl;
-        exit(4);
+        print_error(SYNTACTIC, line, "An invalid alias was chosen!");
       }
 
       else
@@ -125,19 +125,15 @@ int main(int argc, char const *argv[]) {
 
       // We might get a label before the IF statement.
 
-      // TODO: Generate error when there's a label before IF
       if(label != "") {
-        pre_file << label << endl;
+        print_error(SYNTACTIC, line,
+                    "A label was placed before an IF directive!");
         pre_line++;
       }
 
-      // TODO: print error type
       if(condition != "1" && condition != "0") {
-        cerr << "[ERROR - Pre-processing] (Line " << line <<  ")" << endl;
-        cerr << "An invalid condition was given to an IF directive!" << endl;
-        cerr << "Condition: " << condition << endl;
-        cerr << "Exiting!" << endl;
-        exit(4);
+        print_error(SYNTACTIC, line,
+                    "An invalid condition was given to an IF directive!");
       }
 
       else if(condition == "0" && !asm_file.eof()) {
@@ -169,7 +165,7 @@ int main(int argc, char const *argv[]) {
 
   // Tests if it has opened (should open, but better safe than sorry)
   if (!pre_file.is_open()) {
-    cerr << "Couldn't open file: " << file_name << ".pre" << endl;
+    print_error(FATAL, 0, "Couldn't open file: " + file_name + ".pre");
     cerr << "Exiting!" << endl;
     exit(2);
   }
@@ -200,6 +196,38 @@ bool valid_label(string label) {
     valid = false;
 
   return valid;
+
+}
+
+int print_error(ErrorType type, int line, string message) {
+
+  switch (type) {
+
+    case FATAL:
+      cerr << "[FATAL ERROR]" << endl;
+      break;
+
+    case LEXICAL:
+      cerr << "[LEXICAL ERROR] (Line " << line <<  ")" << endl;
+      break;
+
+    case SYNTACTIC:
+      cerr << "[SYNTACTIC ERROR] (Line " << line <<  ")" << endl;
+      break;
+
+    case SEMANTIC:
+      cerr << "[SEMANTIC ERROR] (Line " << line <<  ")" << endl;
+      break;
+
+    default:
+      cerr << "[ERROR]" << endl;
+
+  }
+
+  cerr << message << endl;
+  cerr << endl;
+
+  return 0;
 
 }
 
@@ -329,6 +357,7 @@ Directive list:
 */
 
 /* To-do list:
+    TODO Create a function to exit the program.
     TODO Create data structures for the tables needed for the 2 loader passes.
     TODO Implement the first pass, that reads and stores the labels.
     More to come...
