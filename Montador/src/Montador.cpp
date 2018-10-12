@@ -29,13 +29,17 @@ string replace_aliases(string, map <string, string>);
 // Main function:
 int main(int argc, char const *argv[]) {
 
+  // Error flags:
+  bool pre_error = false;
+
   // Streams for assembly and preprocessed files
   fstream asm_file, pre_file;
 
   // Original file line counter
   unsigned int line = 1;
-  // Pre-processed file line counter
-  unsigned int pre_line = 1;
+
+  // Buffer to hold file lines.
+  list <pair<unsigned int, string>> buffer;
 
   // Table for EQU directives
   map <string, string> aliases_table;
@@ -48,39 +52,31 @@ int main(int argc, char const *argv[]) {
   regex number("[0-9]+");
   smatch search_matches;
 
-  string condition, error_msg, file_name, file_line, formated_line, label;
-  string value;
+  string condition, file_name, file_line, formated_line, label, value;
 
   // Tests if there is program name and file to be assembled
   if(argc != 2) {
-      print_error(FATAL, 0, "Incorrect number of arguments given to function.");
+      print_error(FATAL, 0, "Incorrect number of arguments given to function!");
       cerr << "Exiting!" << endl;
       exit(1);
   }
 
-  // Gets assembly file name
+  // Gets assembly file name.
   file_name = argv[1];
 
-  // Tries to open file stream
+  // Tries to open file stream.
   asm_file.open(file_name + ".asm", ios::in);
 
-  // Exits if there's no file to be opened
+  // Exits if there's no file to be opened.
   if(!asm_file.is_open()) {
-    print_error(FATAL, 0, "Couldn't open file: " + file_name + ".asm");
+    print_error(FATAL, 0, "Couldn't open file: " + file_name + ".asm!");
     cerr << "Exiting!" << endl;
     exit(2);
   }
 
   // Pre-processing pass:
 
-  // Tries to create a new file for pre-processed output
-  pre_file.open(file_name + ".pre", ios::out);
-
-  if(!pre_file.is_open()) {
-    print_error(FATAL, 0, "Couldn't create file: " + file_name + ".pre");
-    cerr << "Exiting!" << endl;
-    exit(2);
-  }
+  cout << "Starting pre-processing pass..." << endl << endl;
 
   // Iterate over the original code file
   while (getline(asm_file, file_line)) {
@@ -99,16 +95,19 @@ int main(int argc, char const *argv[]) {
 
       if(aliases_table.count(label) > 0)  {
         print_error(SEMANTIC, line, "A symbol was aliased twice!");
+        pre_error = true;
       }
 
       else if(!valid_label(label)) {
         print_error(LEXICAL, line, "An invalid symbol was aliased!");
+        pre_error = true;
       }
 
       // The value of an alias should always be a number.
 
       else if(!regex_match(value, number)) {
         print_error(SYNTACTIC, line, "An invalid alias was chosen!");
+        pre_error = true;
       }
 
       else
@@ -128,12 +127,13 @@ int main(int argc, char const *argv[]) {
       if(label != "") {
         print_error(SYNTACTIC, line,
                     "A label was placed before an IF directive!");
-        pre_line++;
+        pre_error = true;
       }
 
       if(condition != "1" && condition != "0") {
         print_error(SYNTACTIC, line,
                     "An invalid condition was given to an IF directive!");
+        pre_error = true;
       }
 
       else if(condition == "0" && !asm_file.eof()) {
@@ -147,30 +147,45 @@ int main(int argc, char const *argv[]) {
 
     // Checks if the line is empty or not.
 
-    else if(formated_line != "") {
-      pre_file << formated_line << endl;
-      pre_line++;
-    }
+    else if(formated_line != "")
+      buffer.push_back(make_pair(line, formated_line));
 
     line++;
 
   }
-  pre_file.close();
+
+  // Closes the original file.
   asm_file.close();
 
-  // First pass:
+  // If there was a pre-processing error, exit the program.
+  if(pre_error) {
+    print_error(FATAL, 0, "Pre-processing pass was not successful!");
+    cerr << "Exiting!" << endl;
+    exit(3);
+  }
 
-  // Open pre-processed file to create symbols tables
-  pre_file.open(file_name + ".pre", ios::in);
+  // Creates a new file for the pre-processed output.
+  pre_file.open(file_name + ".pre", ios::out);
 
-  // Tests if it has opened (should open, but better safe than sorry)
-  if (!pre_file.is_open()) {
-    print_error(FATAL, 0, "Couldn't open file: " + file_name + ".pre");
+  // Tests if the file has opened (it should open, but better safe than sorry).
+  if(!pre_file.is_open()) {
+    print_error(FATAL, 0, "Couldn't create file: " + file_name + ".pre!");
     cerr << "Exiting!" << endl;
     exit(2);
   }
 
-  while (getline(pre_file, file_line)){
+  // Saves each pre-processed line in the .pre file.
+  for(auto const& pair : buffer) {
+    pre_file << pair.second << endl;
+  }
+
+  pre_file.close();
+
+  cout << "Pre-processing pass was successful!" << endl << endl;
+
+  // First pass:
+
+  for(auto const& pair : buffer) {
     // TODO
   }
 
