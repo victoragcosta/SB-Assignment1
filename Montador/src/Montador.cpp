@@ -17,6 +17,13 @@ typedef enum {
   SEMANTIC
 } ErrorType;
 
+// Structs:
+typedef struct {
+  unsigned int bss = 0;
+  unsigned int data = 0;
+  unsigned int text = 0;
+} SectionLines;
+
 // Namespace:
 using namespace std;
 
@@ -30,13 +37,13 @@ string replace_aliases(string, map <string, string>);
 int main(int argc, char const *argv[]) {
 
   // Error flags:
-  bool pre_error = false;
+  bool pre_error = false, pass1_error = false;
 
   // Streams for assembly and preprocessed files
   fstream asm_file, pre_file;
 
   // Original file line counter
-  unsigned int line = 1;
+  unsigned int line_num = 1;
 
   // Buffer to hold file lines.
   list <pair<unsigned int, string>> buffer;
@@ -47,12 +54,16 @@ int main(int argc, char const *argv[]) {
   map <string, int> symbols_table;
 
   // Regular expressions for EQU directive, IF directive and numbers
-  regex equ_directive("(.*): EQU (.*)");
-  regex if_directive("(.*:)? ?IF (.*)");
+  regex equ_directive("^(.*): EQU (.*)$");
+  regex if_directive("^(.*:)? ?IF (.*)$");
   regex number("[0-9]+");
+  regex section_directive("^SECTION (.*)$");
   smatch search_matches;
 
   string condition, file_name, file_line, formated_line, label, value;
+
+  // Struct to hold the number of each section.
+  SectionLines sections;
 
   // Tests if there is program name and file to be assembled
   if(argc != 2) {
@@ -94,19 +105,19 @@ int main(int argc, char const *argv[]) {
       value = search_matches[2].str();
 
       if(aliases_table.count(label) > 0)  {
-        print_error(SEMANTIC, line, "A symbol was aliased twice!");
+        print_error(SEMANTIC, line_num, "A symbol was aliased twice!");
         pre_error = true;
       }
 
       else if(!valid_label(label)) {
-        print_error(LEXICAL, line, "An invalid symbol was aliased!");
+        print_error(LEXICAL, line_num, "An invalid symbol was aliased!");
         pre_error = true;
       }
 
       // The value of an alias should always be a number.
 
       else if(!regex_match(value, number)) {
-        print_error(SYNTACTIC, line, "An invalid alias was chosen!");
+        print_error(SYNTACTIC, line_num, "An invalid alias was chosen!");
         pre_error = true;
       }
 
@@ -125,20 +136,20 @@ int main(int argc, char const *argv[]) {
       // We might get a label before the IF statement.
 
       if(label != "") {
-        print_error(SYNTACTIC, line,
+        print_error(SYNTACTIC, line_num,
                     "A label was placed before an IF directive!");
         pre_error = true;
       }
 
       if(condition != "1" && condition != "0") {
-        print_error(SYNTACTIC, line,
+        print_error(SYNTACTIC, line_num,
                     "An invalid condition was given to an IF directive!");
         pre_error = true;
       }
 
       else if(condition == "0" && !asm_file.eof()) {
         getline(asm_file, file_line);  // Discard the next line;
-        line++;
+        line_num++;
       }
 
       // If condtion == "1", then we don't need to do anything!
@@ -148,9 +159,9 @@ int main(int argc, char const *argv[]) {
     // Checks if the line is empty or not.
 
     else if(formated_line != "")
-      buffer.push_back(make_pair(line, formated_line));
+      buffer.push_back(make_pair(line_num, formated_line));
 
-    line++;
+    line_num++;
 
   }
 
@@ -182,11 +193,87 @@ int main(int argc, char const *argv[]) {
   pre_file.close();
 
   cout << "Pre-processing pass was successful!" << endl << endl;
+  cout << "Starting first compiling pass..." << endl << endl;
 
   // First pass:
 
   for(auto const& pair : buffer) {
-    // TODO
+    // TODO Finish the first pass
+
+    line_num = pair.first;
+    formated_line = pair.second;
+
+    // Section directive:
+    if(regex_search(formated_line, search_matches, section_directive)) {
+
+      label = search_matches[1].str();
+
+      if(label == "TEXT") {
+
+        // Only one section declaration can exist!
+        if(sections.text != 0) {
+          print_error(SEMANTIC, line_num, "The TEXT section was redeclared!");
+          pass1_error = true;
+        }
+
+        else
+          sections.text = line_num;
+
+      }
+
+      else if(label == "DATA") {
+
+        // The TEXT section has to come first.
+        if(sections.text == 0) {
+          print_error(SEMANTIC, line_num,
+                      "The DATA section was declared before the TEXT section!");
+          pass1_error = true;
+        }
+
+        // Only one section declaration can exist!
+        else if(sections.data != 0) {
+          print_error(SEMANTIC, line_num, "The DATA section was redeclared!");
+          pass1_error = true;
+        }
+
+        else
+          sections.data = line_num;
+
+      }
+
+      else if(label == "BSS") {
+
+        // The TEXT section has to come first.
+        if(sections.text == 0) {
+          print_error(SEMANTIC, line_num,
+                      "The BSS section was declared before the TEXT section!");
+          pass1_error = true;
+        }
+
+        // Only one section declaration can exist!
+        else if(sections.bss != 0) {
+          print_error(SEMANTIC, line_num, "The BSS section was redeclared!");
+          pass1_error = true;
+        }
+
+        else
+          sections.bss = line_num;
+
+      }
+
+      // Invalid section argument.
+      else {
+        print_error(SYNTACTIC, line_num, "Invalid SECTION directive!");
+        pass1_error = true;
+      }
+
+    }
+
+  }
+
+  if(sections.text == 0) {
+    print_error(FATAL, 0, "No TEXT section found!");
+    pass1_error = true;
   }
 
   // Second pass:
@@ -214,7 +301,7 @@ bool valid_label(string label) {
 
 }
 
-int print_error(ErrorType type, int line, string message) {
+int print_error(ErrorType type, int line_num, string message) {
 
   switch (type) {
 
@@ -223,15 +310,15 @@ int print_error(ErrorType type, int line, string message) {
       break;
 
     case LEXICAL:
-      cerr << "[LEXICAL ERROR] (Line " << line <<  ")" << endl;
+      cerr << "[LEXICAL ERROR] (Line " << line_num <<  ")" << endl;
       break;
 
     case SYNTACTIC:
-      cerr << "[SYNTACTIC ERROR] (Line " << line <<  ")" << endl;
+      cerr << "[SYNTACTIC ERROR] (Line " << line_num <<  ")" << endl;
       break;
 
     case SEMANTIC:
-      cerr << "[SEMANTIC ERROR] (Line " << line <<  ")" << endl;
+      cerr << "[SEMANTIC ERROR] (Line " << line_num <<  ")" << endl;
       break;
 
     default:
