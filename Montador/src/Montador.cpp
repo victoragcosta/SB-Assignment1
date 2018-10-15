@@ -7,6 +7,7 @@
 #include <regex>
 #include <string>
 #include <map>
+#include "Operation.hpp"
 
 // Enumerations:
 typedef enum {
@@ -16,6 +17,12 @@ typedef enum {
   SYNTACTIC,
   SEMANTIC
 } ErrorType;
+
+typedef enum {
+  TEXT,
+  DATA,
+  BSS
+} Section;
 
 // Structs:
 typedef struct {
@@ -45,22 +52,52 @@ int main(int argc, char const *argv[]) {
   // Original file line counter
   unsigned int line_num = 1;
 
+  // Address counter
+  unsigned int address;
+
+  // Section indicator
+  Section actual_section;
+
   // Buffer to hold file lines.
   list <pair<unsigned int, string>> buffer;
 
   // Table for EQU directives
   map <string, string> aliases_table;
-  // Table generated in the first pass to be used in the second pass
-  map <string, int> symbols_table;
+
+  // Tables generated in the first pass to be used in the second pass
+  map <string, pair<int,bool>> symbols_table;
+  map <string, list<int>> use_table;
+  map <string, int> definitions_table;
+
+  // Table with all instructions
+  map <string, Operation*> opcodes_table;
+  opcodes_table["ADD"]    = new Operation(1,  2, 1);
+  opcodes_table["SUB"]    = new Operation(2,  2, 1);
+  opcodes_table["MUL"]    = new Operation(3,  2, 1);
+  opcodes_table["DIV"]    = new Operation(4,  2, 1);
+  opcodes_table["JMP"]    = new Operation(5,  2, 1);
+  opcodes_table["JMPN"]   = new Operation(6,  2, 1);
+  opcodes_table["JMPP"]   = new Operation(7,  2, 1);
+  opcodes_table["JMPZ"]   = new Operation(8,  2, 1);
+  opcodes_table["COPY"]   = new Operation(9,  3, 2);
+  opcodes_table["LOAD"]   = new Operation(10, 2, 1);
+  opcodes_table["STORE"]  = new Operation(11, 2, 1);
+  opcodes_table["INPUT"]  = new Operation(12, 2, 1);
+  opcodes_table["OUTPUT"] = new Operation(13, 2, 1);
+  opcodes_table["STOP"]   = new Operation(14, 1, 0);
 
   // Regular expressions for EQU directive, IF directive and numbers
   regex equ_directive("^(.*): EQU (.*)$");
   regex if_directive("^(.*:)? ?IF (.*)$");
   regex number("[0-9]+");
   regex section_directive("^SECTION (.*)$");
-  smatch search_matches;
+  regex double_label_regex("^(.*):(.*):.*$");
+  regex public_directive("^(.*: )?PUBLIC ([^ ,]+)$");
+  regex extern_directive("^(.+): EXTERN$");
+  regex label_regex("^(.*): ([^ ]+) ?([^,]*)?,? ?([^,]*)?$");
+  smatch search_matches;  // Search results
 
-  string condition, file_name, file_line, formated_line, label, value;
+  string condition, file_name, file_line, formated_line, label, value, operation, argument1, argument2;
 
   // Struct to hold the number of each section.
   SectionLines sections;
@@ -152,7 +189,7 @@ int main(int argc, char const *argv[]) {
         line_num++;
       }
 
-      // If condtion == "1", then we don't need to do anything!
+      // If condition == "1", then we don't need to do anything!
 
     }
 
@@ -197,11 +234,14 @@ int main(int argc, char const *argv[]) {
 
   // First pass:
 
-  for(auto const& pair : buffer) {
+  // Address counter
+  address = 0;
+  // Iterate over pre-processed file
+  for(auto const& pre_line : buffer) {
     // TODO Finish the first pass
 
-    line_num = pair.first;
-    formated_line = pair.second;
+    line_num = pre_line.first;
+    formated_line = pre_line.second;
 
     // Section directive:
     if(regex_search(formated_line, search_matches, section_directive)) {
@@ -216,8 +256,10 @@ int main(int argc, char const *argv[]) {
           pass1_error = true;
         }
 
-        else
+        else {
           sections.text = line_num;
+          actual_section = Section::TEXT;
+        }
 
       }
 
@@ -236,8 +278,10 @@ int main(int argc, char const *argv[]) {
           pass1_error = true;
         }
 
-        else
+        else {
           sections.data = line_num;
+          actual_section = Section::DATA;
+        }
 
       }
 
@@ -256,8 +300,10 @@ int main(int argc, char const *argv[]) {
           pass1_error = true;
         }
 
-        else
+        else {
           sections.bss = line_num;
+          actual_section = Section::BSS;
+        }
 
       }
 
@@ -267,10 +313,107 @@ int main(int argc, char const *argv[]) {
         pass1_error = true;
       }
 
+    } // End Section directive
+    // Tests for double labels
+    else if (regex_search(formated_line, search_matches, double_label_regex)) {
+      print_error(SYNTACTIC, line_num, "You cannot have two labels on the same line!");
+      pass1_error = true;
+    } // End double labels
+    // Public
+    else if(regex_search(formated_line, search_matches, public_directive)) {
+      label = search_matches[1].str();
+      argument1 = search_matches[2].str();
+      if(label != ""){
+        print_error(SYNTACTIC, line_num, "PUBLIC directives must not have labels!");
+        pass1_error = true;
+      } else if(argument1 == "") {
+        print_error(SYNTACTIC, line_num, "PUBLIC directive must have one argument!");
+        pass1_error = true;
+      } else if(!valid_label(argument1)) {
+        print_error(LEXICAL, line_num, "Argument invalid");
+        pass1_error = true;
+      } else if(definitions_table.count(argument1) > 0) {
+        print_error(SEMANTIC, line_num, "Repeated declaration of label "+argument1+" as PUBLIC");
+        pass1_error = true;
+      } else {
+        definitions_table[argument1] = line_num; // line_num as placeholder for error messages
+      }
+    } // End public
+    // Extern
+    else if(regex_search(formated_line, search_matches, extern_directive)) {
+      // TODO finish extern
+    } // End extern
+    // Tests for a generic code line
+    else if(regex_search(formated_line, search_matches, label_regex)) {
+      label = search_matches[1].str();
+      operation = search_matches[2].str();
+      argument1 = search_matches[3].str();
+      argument2 = search_matches[4].str();
+
+      // Adds label to symbols_table if there's one
+      if(label != ""){
+        if(!valid_label(label)) {
+          print_error(SEMANTIC, line_num, "The label is not valid!");
+          pass1_error = true;
+        }
+        else if (symbols_table.count(label) > 0) {
+          print_error(SEMANTIC, line_num, "Label was redefined!");
+          pass1_error = true;
+        } else {
+          symbols_table[label] = make_pair(address, false);
+        }
+      }
+
+      // Tests if it's a valid operation
+      if(opcodes_table.count(operation) > 0){
+        // Refactor into a function maybe?
+        if(argument1 != "" || argument2 != ""){
+          for (auto const& iter : symbols_table ) {
+            // If it is extern
+            if(iter.second.second == true){  
+              if(argument1.find(iter.first)){
+                use_table[iter.first].push_back(address+1);
+              }
+              if(argument2.find(iter.first)){
+                use_table[iter.first].push_back(address+2);
+              }
+            }
+          }
+        }
+        address += opcodes_table[operation]->getSize();
+      }
+      // If not empty, must be a directive
+      else if(operation != "") {
+        if ((operation == "SPACE" && argument1 == "") || operation == "CONST") {
+          address += 1;
+        }
+        else if(operation == "SPACE" && argument1 != "") {
+          address += stoi(argument1);
+        }
+        else {
+          print_error(SYNTACTIC, line_num, "Invalid directive or operation!");
+          pass1_error = true;
+        }
+      }
+
+    } // End code with generic code line
+    else {
+      print_error(SYNTACTIC, line_num, "Invalid code line!");
+      pass1_error = true;
     }
 
   }
-
+  
+  // Copies symbols values to definitions table
+  for(auto const& iter : definitions_table) {
+    if(symbols_table.count(iter.first) > 0){
+      definitions_table[iter.first] = symbols_table[iter.first].first;
+    } else {
+      print_error(SEMANTIC, iter.second, "Label "+ iter.first +" was never defined!");
+      pass1_error = true;
+    }
+  }
+  
   if(sections.text == 0) {
     print_error(FATAL, 0, "No TEXT section found!");
     pass1_error = true;
@@ -282,6 +425,9 @@ int main(int argc, char const *argv[]) {
   /* for(auto const& pair : aliases_table) {
     cout << pair.first << ": " << pair.second << endl;
   } */
+
+  // cleans all allocated objects in table
+  opcodes_table.clear();
 
   return 0;
 

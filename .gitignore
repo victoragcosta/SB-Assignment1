@@ -11,6 +11,9 @@
 *.gch
 *.pch
 
+#VSCode Specific
+.vscode
+
 # Compiled Dynamic libraries
 *.so
 *.dylib
@@ -34,3 +37,6 @@
 *.exe
 *.out
 *.app
+
+# Program output
+*.pre

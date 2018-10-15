@@ -28,35 +28,33 @@ Para executar o ligador basta chamar ```./Ligador arquivo1 arquivo2 arquivo3 arq
 ### Passagem 0:
 
 * Léxicos:
-  * tokens inválidos (EQU e IF)
+  * [x] tokens inválidos (EQU e IF)
 * Sintáticos:
-  * label antes de IF
+  * [x] label antes de IF
 
 ### Passagem 1:
 
 * Léxicos:
-  * tokens inválidos (Todo o resto)
+  * [x] tokens inválidos (Todo o resto)
 * Sintáticos:
-  * dois rótulos na mesma linha
-  * seção inválida
+  * [x] dois rótulos na mesma linha
+  * [x] seção inválida
 * Semânticos:
-  * declarações e rótulos repetidos
-  * seção TEXT faltante
+  * [x] declarações e rótulos repetidos
+  * [x] seção TEXT faltante
 
 ### Passagem 2:
 
 * Sintáticos:
-  * instruções inválidas
-  * diretivas inválidas
-  * divisão por zero (para constante)
-  * instruções com a quantidade de operando inválida
-  * tipo de argumento inválido
+  * [ ] instruções inválidas
+  * [ ] diretivas inválidas
+  * [ ] divisão por zero (para constante)
+  * [ ] instruções com a quantidade de operando inválida
+  * [ ] tipo de argumento inválido
 
 * Semânticos:
-  * declarações e rótulos ausentes
-  * pulo para rótulos inválidos
-  * pulo para seção errada
-  * diretivas ou instruções na seção errada
-  * modificação de um valor constante
-
-
+  * [ ] declarações e rótulos ausentes
+  * [ ] pulo para rótulos inválidos
+  * [ ] pulo para seção errada
+  * [ ] diretivas ou instruções na seção errada
+  * [ ] modificação de um valor constante
