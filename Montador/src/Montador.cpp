@@ -39,6 +39,7 @@ using namespace std;
 // Function headers:
 bool valid_label(string);
 int print_error(ErrorType, int, string);
+list<string> split_string(char, string);
 string format_line(string);
 string replace_aliases(string, map <string, string>);
 
@@ -88,9 +89,9 @@ int main(int argc, char const *argv[]) {
   opcodes_table["OUTPUT"] = new Operation(13, 2, 1);
   opcodes_table["STOP"]   = new Operation(14, 1, 0);
 
-  // Regular expressions for EQU directive, IF directive and numbers
-  regex equ_directive("^(.*): EQU (.*)$");
-  regex if_directive("^(.*:)? ?IF (.*)$");
+  // Regular expressions:
+  regex equ_directive("^(.*): EQU(?: (.*))?$");
+  regex if_directive("^(.*:)? ?IF(?: (.*))?$");
   regex number("[0-9]+");
   regex section_directive("^SECTION(?: (.*))?$");
   regex double_label_regex("^(.*):(.*):.*$");
@@ -98,7 +99,7 @@ int main(int argc, char const *argv[]) {
   regex extern_directive("^(.+): EXTERN$");
   regex label_regex("^(.+): ([A-Za-z]*)(?: ([^,:\n]*)(?:, ([^,:\n]*))?)?$");
   regex command_regex("^([A-Za-z]*)(?: ([^,:\n]*)(?:, ([^,:\n]*))?)?$");
-  smatch search_matches;  // Search results
+  smatch search_matches;  // Search results.
 
   regex find_use("\\b([A-Za-z_0-9]+)\\b");
   smatch uses;
@@ -157,6 +158,13 @@ int main(int argc, char const *argv[]) {
         pre_error = true;
       }
 
+      // Empty EQU statement.
+
+      else if(value == "") {
+        print_error(SYNTACTIC, line_num, "An EQU directive needs an alias!");
+        pre_error = true;
+      }
+
       // The value of an alias should always be a number.
 
       else if(!regex_match(value, number)) {
@@ -184,7 +192,15 @@ int main(int argc, char const *argv[]) {
         pre_error = true;
       }
 
-      if(condition != "1" && condition != "0") {
+      // Empty IF statement.
+
+      else if(condition == "") {
+        print_error(SYNTACTIC, line_num,
+                    "No condition was given to an IF directive!");
+        pre_error = true;
+      }
+
+      else if(condition != "1" && condition != "0") {
         print_error(SYNTACTIC, line_num,
                     "An invalid condition was given to an IF directive!");
         pre_error = true;
@@ -317,7 +333,15 @@ int main(int argc, char const *argv[]) {
 
       }
 
+      // Empty section directive.
+
+      else if(label == "") {
+        print_error(SYNTACTIC, line_num, "Empty SECTION directive!");
+        pass1_error = true;
+      }
+
       // Invalid section argument.
+
       else {
         print_error(SYNTACTIC, line_num, "Invalid SECTION directive!");
         pass1_error = true;
@@ -528,13 +552,13 @@ int main(int argc, char const *argv[]) {
     cout << endl;
   }
 
+  cout << "First compiling pass was successful!" << endl << endl;
+  cout << "Starting second compiling pass..." << endl << endl;
+
   // Second pass:
 
 
-  /* for(auto const& pair : aliases_table) {
-    cout << pair.first << ": " << pair.second << endl;
-  } */
-
+  // TODO Make an exit function to clean-up the house before exiting.
   // cleans all allocated objects in table
   opcodes_table.clear();
 
@@ -587,6 +611,24 @@ int print_error(ErrorType type, int line_num, string message) {
 
 }
 
+list<string> split_string(char delimeter, string input) {
+
+  list<string> results;
+  size_t position;
+  string result;
+
+  while((position = input.find(delimeter)) != string::npos) {
+    result = input.substr(0, position);
+    results.push_back(result);
+    input.erase(0, position + 1);
+  }
+
+  results.push_back(input);
+
+  return results;
+
+}
+
 string format_line(string line) {
 
   regex colon(":"), comment(";.*"), first_space("^ "), last_space(" $");
@@ -612,31 +654,19 @@ string format_line(string line) {
 
 string replace_aliases(string line, map <string, string> aliases_table) {
 
-  list <string> words;
-  size_t position = 0;
-  string aux, modded_line = "", word;
-
-  // It might be a good idea to keep the original line intact.
-
-  aux = line;
+  list<string> words;
+  string modded_line = "", word;
 
   // First, let's get rid of empty lines! Remember: we already formatted the
   // line, so this corner case catches comments, empty lines, etc...
 
-  if(aux == "")
+  if(line == "")
     return line;
 
   // Now we split the line along spaces and stores it's words in a list called
   // words.
 
-  /* TODO: create split function for better readability */
-  while((position = aux.find(" ")) != string::npos) {
-    word = aux.substr(0, position);
-    words.push_back(word);
-    aux.erase(0, position + 1);
-  }
-
-  words.push_back(aux);
+  words = split_string(' ', line);
 
   // Now we have to go through each word and replace any alias with it's value,
   // being careful to avoid messing with labels and section statements.
