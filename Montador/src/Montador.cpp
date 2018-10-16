@@ -9,6 +9,8 @@
 #include <map>
 #include "Operation.hpp"
 
+#define DEBUG true
+
 // Enumerations:
 typedef enum {
   NORMAL,
@@ -94,8 +96,12 @@ int main(int argc, char const *argv[]) {
   regex double_label_regex("^(.*):(.*):.*$");
   regex public_directive("^(.*: )?PUBLIC ([^ ,]+)$");
   regex extern_directive("^(.+): EXTERN$");
-  regex label_regex("^(.*): ([^ ]+) ?([^,]*)?,? ?([^,]*)?$");
+  regex label_regex("^(.+): ([A-Za-z]*)(?: ([^,:\n]*)(?:, ([^,:\n]*))?)?$");
+  regex command_regex("^([A-Za-z]*)(?: ([^,:\n]*)(?:, ([^,:\n]*))?)?$");
   smatch search_matches;  // Search results
+
+  regex find_use("\\b([A-Za-z_0-9]+)\\b");
+  smatch uses;
 
   string condition, file_name, file_line, formated_line, label, value, operation, argument1, argument2;
 
@@ -237,14 +243,18 @@ int main(int argc, char const *argv[]) {
   // Address counter
   address = 0;
   // Iterate over pre-processed file
-  for(auto const& pre_line : buffer) {
+  for(auto const& pair : buffer) {
     // TODO Finish the first pass
 
-    line_num = pre_line.first;
-    formated_line = pre_line.second;
+    line_num = pair.first;
+    formated_line = pair.second;
 
     // Section directive:
     if(regex_search(formated_line, search_matches, section_directive)) {
+
+      if(DEBUG){
+        cout << line_num << " SECTION" << endl;
+      }
 
       label = search_matches[1].str();
 
@@ -316,11 +326,17 @@ int main(int argc, char const *argv[]) {
     } // End Section directive
     // Tests for double labels
     else if (regex_search(formated_line, search_matches, double_label_regex)) {
+      if(DEBUG){
+        cout << line_num << " double label" << endl;
+      }
       print_error(SYNTACTIC, line_num, "You cannot have two labels on the same line!");
       pass1_error = true;
     } // End double labels
     // Public
     else if(regex_search(formated_line, search_matches, public_directive)) {
+      if(DEBUG){
+        cout << line_num << " PUBLIC" << endl;
+      }
       label = search_matches[1].str();
       argument1 = search_matches[2].str();
       if(label != ""){
@@ -341,10 +357,28 @@ int main(int argc, char const *argv[]) {
     } // End public
     // Extern
     else if(regex_search(formated_line, search_matches, extern_directive)) {
-      // TODO finish extern
+      if(DEBUG){
+        cout << line_num << " EXTERN" << endl;
+      }
+      label = search_matches[1].str();
+
+      if(label == "") {
+        print_error(SYNTACTIC, line_num, "EXTERN directive must have a label!");
+        pass1_error = true;
+      }
+      else if(symbols_table.count(label) > 0) {
+        print_error(SEMANTIC, line_num, "Label redefined!");
+        pass1_error = true;
+      }
+      else {
+        symbols_table[label] = make_pair(address, true);
+      }
     } // End extern
-    // Tests for a generic code line
+    // Tests for a generic code line with label
     else if(regex_search(formated_line, search_matches, label_regex)) {
+      if(DEBUG) {
+        cout << line_num << " LABEL" << endl;
+      }
       label = search_matches[1].str();
       operation = search_matches[2].str();
       argument1 = search_matches[3].str();
@@ -370,11 +404,11 @@ int main(int argc, char const *argv[]) {
         if(argument1 != "" || argument2 != ""){
           for (auto const& iter : symbols_table ) {
             // If it is extern
-            if(iter.second.second == true){  
-              if(argument1.find(iter.first)){
+            if(iter.second.second == true){
+              if(regex_search(argument1, uses, find_use) && uses[1].str() == iter.first){
                 use_table[iter.first].push_back(address+1);
               }
-              if(argument2.find(iter.first)){
+              if(regex_search(argument2, uses, find_use) && uses[1].str() == iter.first){
                 use_table[iter.first].push_back(address+2);
               }
             }
@@ -396,14 +430,59 @@ int main(int argc, char const *argv[]) {
         }
       }
 
-    } // End code with generic code line
+    } // End code with generic code line with label
+    // Tests for a generic code line without label
+    else if(regex_search(formated_line, search_matches, command_regex)) {
+      if(DEBUG) {
+        cout << line_num << " COMMAND" << endl;
+      }
+      operation = search_matches[1].str();
+      argument1 = search_matches[2].str();
+      argument2 = search_matches[3].str();
+
+      // Tests if it's a valid operation
+      if(opcodes_table.count(operation) > 0){
+        // Refactor into a function maybe?
+        if(argument1 != "" || argument2 != ""){
+          for (auto const& iter : symbols_table ) {
+            // If it is extern
+            if(iter.second.second == true){
+              if (regex_search(argument1, uses, find_use) && uses[1].str() == iter.first){
+                use_table[iter.first].push_back(address+1);
+              }
+              if(regex_search(argument2, uses, find_use) && uses[1].str() == iter.first){
+                use_table[iter.first].push_back(address+2);
+              }
+            }
+          }
+        }
+        address += opcodes_table[operation]->getSize();
+      }
+      // If not empty, must be a directive
+      else if(operation != "") {
+        if ((operation == "SPACE" && argument1 == "") || operation == "CONST") {
+          address += 1;
+        }
+        else if(operation == "SPACE" && argument1 != "") {
+          address += stoi(argument1);
+        }
+        else {
+          print_error(SYNTACTIC, line_num, "Invalid directive or operation!");
+          pass1_error = true;
+        }
+      }
+
+    } // End code with generic code line without label
     else {
+      if (DEBUG) {
+        cout << line_num << " ELSE" << endl;
+      }
       print_error(SYNTACTIC, line_num, "Invalid code line!");
       pass1_error = true;
     }
 
   }
-  
+
   // Copies symbols values to definitions table
   for(auto const& iter : definitions_table) {
     if(symbols_table.count(iter.first) > 0){
@@ -413,10 +492,40 @@ int main(int argc, char const *argv[]) {
       pass1_error = true;
     }
   }
-  
+
   if(sections.text == 0) {
     print_error(FATAL, 0, "No TEXT section found!");
     pass1_error = true;
+  }
+
+  // Prints tables for debug reasons
+  if(DEBUG) {
+
+    cout << endl;
+    cout << " Symbols table:" << endl;
+    cout << " Symbol | address | extern" << endl;
+    for(auto const& iter : symbols_table) {
+      cout << " " << iter.first << " | " << iter.second.first << " | " << iter.second.second << endl;
+    }
+    cout << endl;
+
+    cout << " Definitions table:" << endl;
+    cout << " Symbol | address" << endl;
+    for (auto const& iter : definitions_table)
+    {
+      cout << " " << iter.first << " | " << iter.second << endl;
+    }
+    cout << endl;
+
+    cout << " Use table:" << endl;
+    cout << " Symbol | address " << endl;
+    for (auto const& iter : use_table)
+    {
+      for(auto const& iter2 : iter.second) {
+        cout << " " << iter.first << " | " << iter2 << endl;
+      }
+    }
+    cout << endl;
   }
 
   // Second pass:
@@ -430,7 +539,6 @@ int main(int argc, char const *argv[]) {
   opcodes_table.clear();
 
   return 0;
-
 }
 
 // Function implementations:
