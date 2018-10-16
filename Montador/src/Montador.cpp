@@ -75,7 +75,7 @@ int main(int argc, char const *argv[]) {
   map <string, Operation*> opcodes_table;
   opcodes_table["ADD"]    = new Operation(1,  2, 1);
   opcodes_table["SUB"]    = new Operation(2,  2, 1);
-  opcodes_table["MUL"]    = new Operation(3,  2, 1);
+  opcodes_table["MULT"]    = new Operation(3,  2, 1);
   opcodes_table["DIV"]    = new Operation(4,  2, 1);
   opcodes_table["JMP"]    = new Operation(5,  2, 1);
   opcodes_table["JMPN"]   = new Operation(6,  2, 1);
@@ -92,7 +92,7 @@ int main(int argc, char const *argv[]) {
   regex equ_directive("^(.*): EQU (.*)$");
   regex if_directive("^(.*:)? ?IF (.*)$");
   regex number("[0-9]+");
-  regex section_directive("^SECTION (.*)$");
+  regex section_directive("^SECTION(?: (.*))?$");
   regex double_label_regex("^(.*):(.*):.*$");
   regex public_directive("^(.*: )?PUBLIC ([^ ,]+)$");
   regex extern_directive("^(.+): EXTERN$");
