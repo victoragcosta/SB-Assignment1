@@ -39,7 +39,7 @@ using namespace std;
 // Function headers:
 bool valid_label(string);
 int print_error(ErrorType, int, string);
-list<string> split_string(char, string);
+list <string> split_string(char, string);
 string format_line(string);
 string replace_aliases(string, map <string, string>);
 
@@ -47,19 +47,19 @@ string replace_aliases(string, map <string, string>);
 int main(int argc, char const *argv[]) {
 
   // Error flags:
-  bool pre_error = false, pass1_error = false;
+  bool pre_error = false, pass1_error = false, pass2_error = false;
 
   // Streams for assembly and preprocessed files
-  fstream asm_file, pre_file;
+  fstream asm_file, obj_file, pre_file;
 
-  // Original file line counter
-  unsigned int line_num = 1;
-
-  // Address counter
-  unsigned int address;
+  // Counters
+  unsigned int address, line_num, operand_num;
 
   // Section indicator
   Section actual_section;
+
+  // Machine code output
+  list <int> machine_code;
 
   // Buffer to hold file lines.
   list <pair<unsigned int, string>> buffer;
@@ -97,8 +97,13 @@ int main(int argc, char const *argv[]) {
   regex double_label_regex("^(.*):(.*):.*$");
   regex public_directive("^(.*: )?PUBLIC ([^ ,]+)$");
   regex extern_directive("^(.+): EXTERN$");
-  regex label_regex("^(.+): ([A-Za-z]*)(?: ([^,:\n]*)(?:, ([^,:\n]*))?)?$");
+
+  // TODO refactor these 2 regexes into 1 with a conditional capture.
+  // TODO refactor the code where they are used.
+  regex label_regex("^(.+): ?([A-Za-z]*)(?: ([^,:\n]*)(?:, ([^,:\n]*))?)?$");
   regex command_regex("^([A-Za-z]*)(?: ([^,:\n]*)(?:, ([^,:\n]*))?)?$");
+
+  regex command("^(?:(.+): ?)?([A-Za-z]*)(?: ([^,:\n]*)(?:, ([^,:\n]*))?)?$");
   smatch search_matches;  // Search results.
 
   regex find_use("\\b([A-Za-z_0-9]+)\\b");
@@ -132,6 +137,9 @@ int main(int argc, char const *argv[]) {
   // Pre-processing pass:
 
   cout << "Starting pre-processing pass..." << endl << endl;
+
+  // Start line counter:
+  line_num = 1;
 
   // Iterate over the original code file
   while (getline(asm_file, file_line)) {
@@ -258,6 +266,7 @@ int main(int argc, char const *argv[]) {
 
   // Address counter
   address = 0;
+
   // Iterate over pre-processed file
   for(auto const& pair : buffer) {
     // TODO Finish the first pass
@@ -552,11 +561,99 @@ int main(int argc, char const *argv[]) {
     cout << endl;
   }
 
+  // TODO Implement error analysis for first compiling pass.
+
   cout << "First compiling pass was successful!" << endl << endl;
   cout << "Starting second compiling pass..." << endl << endl;
 
   // Second pass:
 
+  for(auto const& pair : buffer) {
+
+    // TODO Finish second pass.
+
+    line_num = pair.first;
+    formated_line = pair.second;
+
+    if(regex_search(formated_line, search_matches, command)) {
+
+      operation = search_matches[1].str();
+      argument1 = search_matches[2].str();
+      argument2 = search_matches[3].str();
+
+      operand_num = 0;
+
+      if(argument1 != "") {
+        operand_num++;
+
+        // The reason the if below is nested is simple:
+        // If there is no first argument, there shouldn't be a second argument.
+        // It's simple logic!
+
+        if(argument2 != "")
+          operand_num++;
+
+      }
+
+      // Valid operation:
+      if(opcodes_table.count(operation) > 0) {
+
+        if(opcodes_table[operation]->getNParameters() != operand_num) {
+          print_error(SYNTACTIC, line_num, "Invalid number of operands!");
+          pass2_error = true;
+        }
+
+      }
+
+    }
+
+    else {
+      // TODO Error cases.
+    }
+
+  }
+
+  if(pass2_error) {
+    print_error(FATAL, 0, "Second compiling pass was not successful!");
+    cerr << "Exiting!" << endl;
+    exit(5);
+  }
+
+  cout << "Second compiling pass was successful!" << endl << endl;
+
+  // Creates a new file for the compilation output.
+  obj_file.open(file_name + ".obj", ios::out);
+
+  // Tests if the file has opened (it should open, but better safe than sorry).
+  if(!obj_file.is_open()) {
+    print_error(FATAL, 0, "Couldn't create file: " + file_name + ".obj!");
+    cerr << "Exiting!" << endl;
+    exit(2);
+  }
+
+  // TODO Actually save something in the file created!
+
+  // TABLE USE:
+  obj_file << "TABLE USE" << endl;
+
+  obj_file << endl;
+
+  // TABLE DEFINITION:
+  obj_file << "TABLE DEFINITION" << endl;
+
+  obj_file << endl;
+
+  // RELATIVE (0 indexed!):
+  obj_file << "RELATIVE" << endl;
+
+  obj_file << endl;
+
+  // CODE:
+  obj_file << "CODE" << endl;
+
+  obj_file.close();
+
+  cout << "File compilation was successful!" << endl << endl;
 
   // TODO Make an exit function to clean-up the house before exiting.
   // cleans all allocated objects in table
@@ -611,9 +708,9 @@ int print_error(ErrorType type, int line_num, string message) {
 
 }
 
-list<string> split_string(char delimeter, string input) {
+list <string> split_string(char delimeter, string input) {
 
-  list<string> results;
+  list <string> results;
   size_t position;
   string result;
 
@@ -632,7 +729,7 @@ list<string> split_string(char delimeter, string input) {
 string format_line(string line) {
 
   regex colon(":"), comment(";.*"), first_space("^ "), last_space(" $");
-  regex spaces_and_tabs("[ \t]+");
+  regex offset_plus(" \\+ "), spaces_and_tabs("[ \t]+");
   string formated_line;
 
   // Removes comments and extra tabs and spaces.
@@ -640,6 +737,7 @@ string format_line(string line) {
   formated_line = regex_replace(line, comment, "");
   formated_line = regex_replace(formated_line, colon, ": ");
   formated_line = regex_replace(formated_line, spaces_and_tabs, " ");
+  formated_line = regex_replace(formated_line, offset_plus, "+");
   formated_line = regex_replace(formated_line, first_space, "");
   formated_line = regex_replace(formated_line, last_space, "");
 
