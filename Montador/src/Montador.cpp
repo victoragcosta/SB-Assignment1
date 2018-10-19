@@ -28,9 +28,9 @@ typedef enum {
 
 // Structs:
 typedef struct {
+  unsigned int text = 0;
   unsigned int bss = 0;
   unsigned int data = 0;
-  unsigned int text = 0;
 } SectionLines;
 
 // Namespace:
@@ -38,10 +38,15 @@ using namespace std;
 
 // Function headers:
 bool valid_label(string);
+int clean_up(void);
+int exit_program(int);
 int print_error(ErrorType, int, string);
 list <string> split_string(string, string);
 string format_line(string);
 string replace_aliases(string, map <string, string>);
+
+// Global variables:
+map <string, Operation*> opcodes_table;
 
 // Main function:
 int main(int argc, char const *argv[]) {
@@ -49,17 +54,17 @@ int main(int argc, char const *argv[]) {
   // Error flags:
   bool pre_error = false, pass1_error = false, pass2_error = false;
 
+  // TODO Actually check if the program is a module.
+  // Module flags:
+  bool module_start = false, module_end = false, valid_module = false;
+
   // Streams for assembly and preprocessed files
   fstream asm_file, obj_file, pre_file;
 
-  // Counters
-  unsigned int address, line_num, operand_num;
-
-  // Section indicator
-  Section actual_section;
+  int offset;
 
   // Machine code output
-  list <int> machine_code;
+  list <int> machine_code, relative_addresses;
 
   // Buffer to hold file lines.
   list <pair<unsigned int, string>> buffer;
@@ -75,26 +80,11 @@ int main(int argc, char const *argv[]) {
   map <string, list<int>> use_table;
   map <string, int> definitions_table;
 
-  // Table with all instructions
-  map <string, Operation*> opcodes_table;
-  opcodes_table["ADD"]    = new Operation(1,  2, 1);
-  opcodes_table["SUB"]    = new Operation(2,  2, 1);
-  opcodes_table["MULT"]    = new Operation(3,  2, 1);
-  opcodes_table["DIV"]    = new Operation(4,  2, 1);
-  opcodes_table["JMP"]    = new Operation(5,  2, 1);
-  opcodes_table["JMPN"]   = new Operation(6,  2, 1);
-  opcodes_table["JMPP"]   = new Operation(7,  2, 1);
-  opcodes_table["JMPZ"]   = new Operation(8,  2, 1);
-  opcodes_table["COPY"]   = new Operation(9,  3, 2);
-  opcodes_table["LOAD"]   = new Operation(10, 2, 1);
-  opcodes_table["STORE"]  = new Operation(11, 2, 1);
-  opcodes_table["INPUT"]  = new Operation(12, 2, 1);
-  opcodes_table["OUTPUT"] = new Operation(13, 2, 1);
-  opcodes_table["STOP"]   = new Operation(14, 1, 0);
-
   // Regular expressions:
+  regex command("^(?:.*: ?)?([^ :]*)(?: (.*))?$");
   regex equ_directive("^(.*): EQU(?: (.*))?$");
   regex if_directive("^(.*:)? ?IF(?: (.*))?$");
+  regex label_and_offset("^([^\\+]*)(?:\\+([0-9]+))?$");
   regex number("[0-9]+");
   regex section_directive("^SECTION(?: (.*))?$");
   regex double_label_regex("^(.*):(.*):.*$");
@@ -106,23 +96,44 @@ int main(int argc, char const *argv[]) {
   regex label_regex("^(.+): ?([A-Za-z]*)(?: ([^,:\n]*)(?:, ([^,:\n]*))?)?$");
   regex command_regex("^([A-Za-z]*)(?: ([^,:\n]*)(?:, ([^,:\n]*))?)?$");
 
-  regex command("^(?:.*: ?)?([^ ]*)(?: (.*))?$");
-  smatch search_matches;  // Search results.
+  smatch search_matches, search_matches2;  // Search results.
 
   regex find_use("\\b([A-Za-z_0-9]+)\\b");
   smatch uses;
 
+  // Section indicator
+  Section actual_section;
+
+  // Section positions
+  SectionLines sections;
+
+  // Strings:
   string argument1, argument2, condition, file_name, file_line, formated_line;
   string label, operation, operands, value;
 
-  // Struct to hold the number of each section.
-  SectionLines sections;
+  // Counters
+  unsigned int address, line_num, operand_num;
+
+  // Instruction data initialization.
+  opcodes_table["ADD"] = new Operation(1,  2, 1);
+  opcodes_table["SUB"] = new Operation(2,  2, 1);
+  opcodes_table["MULT"] = new Operation(3,  2, 1);
+  opcodes_table["DIV"] = new Operation(4,  2, 1);
+  opcodes_table["JMP"] = new Operation(5,  2, 1);
+  opcodes_table["JMPN"] = new Operation(6,  2, 1);
+  opcodes_table["JMPP"] = new Operation(7,  2, 1);
+  opcodes_table["JMPZ"] = new Operation(8,  2, 1);
+  opcodes_table["COPY"] = new Operation(9,  3, 2);
+  opcodes_table["LOAD"] = new Operation(10, 2, 1);
+  opcodes_table["STORE"] = new Operation(11, 2, 1);
+  opcodes_table["INPUT"] = new Operation(12, 2, 1);
+  opcodes_table["OUTPUT"] = new Operation(13, 2, 1);
+  opcodes_table["STOP"] = new Operation(14, 1, 0);
 
   // Tests if there is program name and file to be assembled
   if(argc != 2) {
       print_error(FATAL, 0, "Incorrect number of arguments given to function!");
-      cerr << "Exiting!" << endl;
-      exit(1);
+      exit_program(1);
   }
 
   // Gets assembly file name.
@@ -134,13 +145,12 @@ int main(int argc, char const *argv[]) {
   // Exits if there's no file to be opened.
   if(!asm_file.is_open()) {
     print_error(FATAL, 0, "Couldn't open file: " + file_name + ".asm!");
-    cerr << "Exiting!" << endl;
-    exit(2);
+    exit_program(2);
   }
 
   // Pre-processing pass:
 
-  cout << "Starting pre-processing pass..." << endl << endl;
+  cout << "::Starting pre-processing pass..." << endl << endl;
 
   // Start line counter:
   line_num = 1;
@@ -242,8 +252,7 @@ int main(int argc, char const *argv[]) {
   // If there was a pre-processing error, exit the program.
   if(pre_error) {
     print_error(FATAL, 0, "Pre-processing pass was not successful!");
-    cerr << "Exiting!" << endl;
-    exit(3);
+    exit_program(4);
   }
 
   // Creates a new file for the pre-processed output.
@@ -252,8 +261,7 @@ int main(int argc, char const *argv[]) {
   // Tests if the file has opened (it should open, but better safe than sorry).
   if(!pre_file.is_open()) {
     print_error(FATAL, 0, "Couldn't create file: " + file_name + ".pre!");
-    cerr << "Exiting!" << endl;
-    exit(2);
+    exit_program(3);
   }
 
   // Saves each pre-processed line in the .pre file.
@@ -263,8 +271,8 @@ int main(int argc, char const *argv[]) {
 
   pre_file.close();
 
-  cout << "Pre-processing pass was successful!" << endl << endl;
-  cout << "Starting first compiling pass..." << endl << endl;
+  cout << "::Pre-processing pass was successful!" << endl << endl;
+  cout << "::Starting first compiling pass..." << endl << endl;
 
   // First pass:
 
@@ -567,12 +575,17 @@ int main(int argc, char const *argv[]) {
     cout << endl;
   }
 
-  // TODO Implement error analysis for first compiling pass.
+  if(pass1_error) {
+    print_error(FATAL, 0, "First compiling pass was not successful!");
+    exit_program(5);
+  }
 
-  cout << "First compiling pass was successful!" << endl << endl;
-  cout << "Starting second compiling pass..." << endl << endl;
+  cout << "::First compiling pass was successful!" << endl << endl;
+  cout << "::Starting second compiling pass..." << endl << endl;
 
   // Second pass:
+
+  address = 0;  // Restart the address counter. It will be needed.
 
   for(auto const& pair : buffer) {
 
@@ -597,26 +610,74 @@ int main(int argc, char const *argv[]) {
       // Line contains an operations:
       if(opcodes_table.count(operation) > 0) {
 
+        machine_code.push_back(opcodes_table[operation]->getOpcode());
+        address++;
+
+        // Invalid number of arguments.
         if(opcodes_table[operation]->getNParameters() != operand_num) {
           print_error(SYNTACTIC, line_num,
                       "An invalid number of operands was given!");
           pass2_error = true;
         }
 
+        else {
+
+          for(auto const& operand : operand_list) {
+
+            if(regex_search(operand, search_matches2, label_and_offset)) {
+
+              label = search_matches2[1].str();
+
+              if(search_matches2[2].str() == "")
+                offset = 0;
+
+              else
+                offset = stoi(search_matches2[2].str());
+
+              // Ok, this next bit of code is a bit tricky.
+              // We first check if the label given as an argument exist.
+              // If it does, we get it's address: symbols_table[label].first.
+              // And add that to the offset given.
+              // The result is stored as machine code.
+              // Finally, we update the machine code address.
+
+              if(symbols_table.count(label) > 0) {
+                machine_code.push_back(symbols_table[label].first + offset);
+                relative_addresses.push_back(address);
+                address++;
+              }
+
+              else {
+                print_error(SEMANTIC, line_num,
+                            "A missing label was used as an operand!");
+                pass2_error = true;
+                break;
+              }
+
+            }
+
+            // TODO Make this error message better (E.g: Label - 1).
+
+            else {
+              print_error(SYNTACTIC, line_num,
+                          "An invalid operand was given!");
+              pass2_error = true;
+              break;
+            }
+
+          }
+
+        }
+
       }
 
-    }
-
-    else {
-      // TODO Error cases.
     }
 
   }
 
   if(pass2_error) {
     print_error(FATAL, 0, "Second compiling pass was not successful!");
-    cerr << "Exiting!" << endl;
-    exit(5);
+    exit_program(6);
   }
 
   cout << "Second compiling pass was successful!" << endl << endl;
@@ -627,37 +688,84 @@ int main(int argc, char const *argv[]) {
   // Tests if the file has opened (it should open, but better safe than sorry).
   if(!obj_file.is_open()) {
     print_error(FATAL, 0, "Couldn't create file: " + file_name + ".obj!");
-    cerr << "Exiting!" << endl;
-    exit(2);
+    exit_program(3);
   }
 
-  // TODO Actually save something in the file created!
+  if(valid_module) {
 
-  // TABLE USE:
-  obj_file << "TABLE USE" << endl;
+    // TABLE USE:
+    obj_file << "TABLE USE" << endl;
 
-  obj_file << endl;
+    for(auto const& extern_label : use_table) {
 
-  // TABLE DEFINITION:
-  obj_file << "TABLE DEFINITION" << endl;
+      // The first position of the map contains the label's name.
+      label = extern_label.first;
 
-  obj_file << endl;
+      // The second position of the map contains the label's use addresses.
+      for(auto const& address : extern_label.second) {
 
-  // RELATIVE (0 indexed!):
-  obj_file << "RELATIVE" << endl;
+        // For each address, we print a line in the use table.
+        obj_file << label << " " << address;
 
-  obj_file << endl;
+      }
 
-  // CODE:
-  obj_file << "CODE" << endl;
+    }
+
+    obj_file << endl;
+
+    // TABLE DEFINITION:
+    obj_file << "TABLE DEFINITION" << endl;
+
+    for(auto const& public_label : definitions_table) {
+
+      // The first position of the map contains the label's name.
+      label = public_label.first;
+
+      // The second position of the map contains the label's address.
+      address = public_label.second;
+
+      obj_file << label << " " << address;
+
+    }
+
+    obj_file << endl;
+
+    // RELATIVE (0 indexed!):
+    obj_file << "RELATIVE" << endl;
+
+    for (auto iter = relative_addresses.begin();
+         iter != relative_addresses.end(); iter++) {
+
+      if (iter != relative_addresses.begin())
+        obj_file << " ";
+
+      obj_file << *iter;
+
+    }
+
+    obj_file << endl;
+
+    // CODE:
+    obj_file << "CODE" << endl;
+
+  }
+
+  for (auto iter = machine_code.begin(); iter != machine_code.end(); iter++) {
+
+    if (iter != machine_code.begin())
+      obj_file << " ";
+
+    obj_file << *iter;
+
+  }
 
   obj_file.close();
 
-  cout << "File compilation was successful!" << endl << endl;
+  cout << "::Second compiling pass was successful!" << endl;
+  cout << "::File compilation was successful!" << endl << endl;
 
-  // TODO Make an exit function to clean-up the house before exiting.
-  // cleans all allocated objects in table
-  opcodes_table.clear();
+  // Clean up allocated memory.
+  clean_up();
 
   return 0;
 }
@@ -673,6 +781,58 @@ bool valid_label(string label) {
     valid = false;
 
   return valid;
+
+}
+
+int clean_up(void) {
+
+  for(auto const& pair : opcodes_table)
+    delete opcodes_table[pair.first];
+
+  return 0;
+
+}
+
+int exit_program(int error_code) {
+
+  cerr << "::Program execution could not continue!" << endl;
+
+  switch (error_code) {
+
+    case 1:
+      cerr << "[EXIT] Incorrect number of arguments given to program!" << endl;
+      break;
+
+    case 2:
+      cerr << "[EXIT] Could not open an input file!" << endl;
+      break;
+
+    case 3:
+      cerr << "[EXIT] Could not create an output file!" << endl;
+      break;
+
+    case 4:
+      cerr << "[EXIT] The pre-processing pass was not sucessful!" << endl;
+      break;
+
+    case 5:
+      cerr << "[EXIT] The first compiling pass was not sucessful!" << endl;
+      break;
+
+    case 6:
+      cerr << "[EXIT] The second compiling pass was not sucessful!" << endl;
+      break;
+
+    default:
+      cerr << "[EXIT] An Unknown error ocurred!" << endl;
+
+  }
+
+  cerr << "Exiting!" << endl << endl;
+
+  clean_up();
+
+  exit(error_code);
 
 }
 
@@ -823,8 +983,6 @@ string replace_aliases(string line, map <string, string> aliases_table) {
 
 }
 
-// Adicional notes:
-
 /*
 Directive list:
 
@@ -838,11 +996,4 @@ Directive list:
 * Begin: 0 operands, size 0. Start a module.
 * End: 0 operands, size 0. Ends a module.
 
-*/
-
-/* To-do list:
-    TODO Create a function to exit the program.
-    TODO Create data structures for the tables needed for the 2 loader passes.
-    TODO Implement the first pass, that reads and stores the labels.
-    More to come...
 */
