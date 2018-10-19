@@ -39,7 +39,7 @@ using namespace std;
 // Function headers:
 bool valid_label(string);
 int print_error(ErrorType, int, string);
-list <string> split_string(char, string);
+list <string> split_string(string, string);
 string format_line(string);
 string replace_aliases(string, map <string, string>);
 
@@ -63,6 +63,9 @@ int main(int argc, char const *argv[]) {
 
   // Buffer to hold file lines.
   list <pair<unsigned int, string>> buffer;
+
+  // List of operands given in a line:
+  list <string> operand_list;
 
   // Table for EQU directives
   map <string, string> aliases_table;
@@ -103,13 +106,14 @@ int main(int argc, char const *argv[]) {
   regex label_regex("^(.+): ?([A-Za-z]*)(?: ([^,:\n]*)(?:, ([^,:\n]*))?)?$");
   regex command_regex("^([A-Za-z]*)(?: ([^,:\n]*)(?:, ([^,:\n]*))?)?$");
 
-  regex command("^(?:(.+): ?)?([A-Za-z]*)(?: ([^,:\n]*)(?:, ([^,:\n]*))?)?$");
+  regex command("^(?:.*: ?)?([^ ]*)(?: (.*))?$");
   smatch search_matches;  // Search results.
 
   regex find_use("\\b([A-Za-z_0-9]+)\\b");
   smatch uses;
 
-  string condition, file_name, file_line, formated_line, label, value, operation, argument1, argument2;
+  string argument1, argument2, condition, file_name, file_line, formated_line;
+  string label, operation, operands, value;
 
   // Struct to hold the number of each section.
   SectionLines sections;
@@ -264,12 +268,14 @@ int main(int argc, char const *argv[]) {
 
   // First pass:
 
+  // TODO Refactor the first pass to utilize the operand_list in address
+  // calculations.
+
   // Address counter
   address = 0;
 
   // Iterate over pre-processed file
   for(auto const& pair : buffer) {
-    // TODO Finish the first pass
 
     line_num = pair.first;
     formated_line = pair.second;
@@ -578,28 +584,22 @@ int main(int argc, char const *argv[]) {
     if(regex_search(formated_line, search_matches, command)) {
 
       operation = search_matches[1].str();
-      argument1 = search_matches[2].str();
-      argument2 = search_matches[3].str();
+      operands = search_matches[2].str();
 
-      operand_num = 0;
+      if(operands == "")
+        operand_list.clear();
 
-      if(argument1 != "") {
-        operand_num++;
+      else
+        operand_list = split_string(", ", operands);
 
-        // The reason the if below is nested is simple:
-        // If there is no first argument, there shouldn't be a second argument.
-        // It's simple logic!
+      operand_num = operand_list.size();
 
-        if(argument2 != "")
-          operand_num++;
-
-      }
-
-      // Valid operation:
+      // Line contains an operations:
       if(opcodes_table.count(operation) > 0) {
 
         if(opcodes_table[operation]->getNParameters() != operand_num) {
-          print_error(SYNTACTIC, line_num, "Invalid number of operands!");
+          print_error(SYNTACTIC, line_num,
+                      "An invalid number of operands was given!");
           pass2_error = true;
         }
 
@@ -708,7 +708,7 @@ int print_error(ErrorType type, int line_num, string message) {
 
 }
 
-list <string> split_string(char delimeter, string input) {
+list <string> split_string(string delimeter, string input) {
 
   list <string> results;
   size_t position;
@@ -717,7 +717,7 @@ list <string> split_string(char delimeter, string input) {
   while((position = input.find(delimeter)) != string::npos) {
     result = input.substr(0, position);
     results.push_back(result);
-    input.erase(0, position + 1);
+    input.erase(0, position + delimeter.size());
   }
 
   results.push_back(input);
@@ -764,7 +764,7 @@ string replace_aliases(string line, map <string, string> aliases_table) {
   // Now we split the line along spaces and stores it's words in a list called
   // words.
 
-  words = split_string(' ', line);
+  words = split_string(" ", line);
 
   // Now we have to go through each word and replace any alias with it's value,
   // being careful to avoid messing with labels and section statements.
