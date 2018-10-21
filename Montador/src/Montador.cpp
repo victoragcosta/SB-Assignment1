@@ -9,7 +9,7 @@
 #include <map>
 #include "Operation.hpp"
 
-#define DEBUG true
+#define DEBUG false
 
 // Enumerations:
 typedef enum {
@@ -21,9 +21,11 @@ typedef enum {
 } ErrorType;
 
 typedef enum {
+  BEGIN,
   TEXT,
   DATA,
-  BSS
+  BSS,
+  END
 } Section;
 
 // Structs:
@@ -61,7 +63,7 @@ int main(int argc, char const *argv[]) {
   // Streams for assembly and preprocessed files
   fstream asm_file, obj_file, pre_file;
 
-  int offset;
+  int const_value, i, offset;
 
   // Machine code output
   list <int> machine_code, relative_addresses;
@@ -81,12 +83,14 @@ int main(int argc, char const *argv[]) {
   map <string, int> definitions_table;
 
   // Regular expressions:
-  regex command("^(?:.*: ?)?([^ :]*)(?: (.*))?$");
+  regex command("^(?:(.*): ?)?([^ :]*)(?: (.*))?$");
   regex equ_directive("^(.*): EQU(?: (.*))?$");
+  regex hex_number("0X[0-9A-F]+");
   regex if_directive("^(.*:)? ?IF(?: (.*))?$");
   regex label_and_offset("^([^\\+]*)(?:\\+([0-9]+))?$");
-  regex number("[0-9]+");
+  regex positive_number("[0-9]+");
   regex section_directive("^SECTION(?: (.*))?$");
+  regex signed_number("-?[0-9]+");
   regex double_label_regex("^(.*):(.*):.*$");
   regex public_directive("^(.*: )?PUBLIC ([^ ,]+)$");
   regex extern_directive("^(.+): EXTERN$");
@@ -109,7 +113,7 @@ int main(int argc, char const *argv[]) {
 
   // Strings:
   string argument1, argument2, condition, file_name, file_line, formated_line;
-  string label, operation, operands, value;
+  string label, operation, operands, start_label, value;
 
   // Counters
   unsigned int address, line_num, operand_num;
@@ -189,7 +193,7 @@ int main(int argc, char const *argv[]) {
 
       // The value of an alias should always be a number.
 
-      else if(!regex_match(value, number)) {
+      else if(!regex_match(value, signed_number)) {
         print_error(SYNTACTIC, line_num, "An invalid alias was chosen!");
         pre_error = true;
       }
@@ -278,6 +282,7 @@ int main(int argc, char const *argv[]) {
 
   // TODO Refactor the first pass to utilize the operand_list in address
   // calculations.
+  // TODO Refactor first pass to include module evaluation.
 
   // Address counter
   address = 0;
@@ -471,7 +476,7 @@ int main(int argc, char const *argv[]) {
         else if(operation == "SPACE" && argument1 != "") {
           address += stoi(argument1);
         }
-        else {
+        else if(operation != "BEGIN" && operation != "END") {
           print_error(SYNTACTIC, line_num, "Invalid directive or operation!");
           pass1_error = true;
         }
@@ -513,7 +518,7 @@ int main(int argc, char const *argv[]) {
         else if(operation == "SPACE" && argument1 != "") {
           address += stoi(argument1);
         }
-        else {
+        else if(operation != "BEGIN" && operation != "END") {
           print_error(SYNTACTIC, line_num, "Invalid directive or operation!");
           pass1_error = true;
         }
@@ -586,6 +591,7 @@ int main(int argc, char const *argv[]) {
   // Second pass:
 
   address = 0;  // Restart the address counter. It will be needed.
+  actual_section = Section::BEGIN; // Reset the section variable.
 
   for(auto const& pair : buffer) {
 
@@ -594,10 +600,19 @@ int main(int argc, char const *argv[]) {
     line_num = pair.first;
     formated_line = pair.second;
 
+    if(actual_section == Section::END) {
+      print_error(SEMANTIC, line_num,
+                  "No commands can be given after the END directive.");
+      pass2_error = true;
+      break;
+    }
+
+    // Valid command (This should always match...)!
     if(regex_search(formated_line, search_matches, command)) {
 
-      operation = search_matches[1].str();
-      operands = search_matches[2].str();
+      start_label = search_matches[1].str();  // Some commands NEED labels...
+      operation = search_matches[2].str();
+      operands = search_matches[3].str();
 
       if(operands == "")
         operand_list.clear();
@@ -607,14 +622,20 @@ int main(int argc, char const *argv[]) {
 
       operand_num = operand_list.size();
 
-      // Line contains an operations:
+      // Line contains an instruction:
       if(opcodes_table.count(operation) > 0) {
 
         machine_code.push_back(opcodes_table[operation]->getOpcode());
         address++;
 
+        if(actual_section != Section::TEXT) {
+          print_error(SYNTACTIC, line_num,
+                      "An instruction was used outside the TEXT SECTION!");
+          pass2_error = true;
+        }
+
         // Invalid number of arguments.
-        if(opcodes_table[operation]->getNParameters() != operand_num) {
+        else if(opcodes_table[operation]->getNParameters() != operand_num) {
           print_error(SYNTACTIC, line_num,
                       "An invalid number of operands was given!");
           pass2_error = true;
@@ -651,7 +672,6 @@ int main(int argc, char const *argv[]) {
                 print_error(SEMANTIC, line_num,
                             "A missing label was used as an operand!");
                 pass2_error = true;
-                break;
               }
 
             }
@@ -660,17 +680,240 @@ int main(int argc, char const *argv[]) {
 
             else {
               print_error(SYNTACTIC, line_num,
-                          "An invalid operand was given!");
+                          "An invalid operand was given to an instruction!");
               pass2_error = true;
-              break;
             }
 
           }
 
         }
 
+      } // End of instruction.
+
+      // If the operation isn't an instruction, them it must be a directive!
+      // SPACE directive:
+      else if(operation == "SPACE") {
+
+        // The SPACE directive needs to be in the BSS SECTION.
+        if(actual_section != Section::BSS) {
+          print_error(SEMANTIC, line_num,
+                      "A SPACE directive was used outside the BSS SECTION!");
+          pass2_error = true;
+        }
+
+        // Regular SPACE:
+        else if(operand_num == 0) {
+          machine_code.push_back(0);
+          address++;
+        }
+
+        // SPACE with argument:
+        else if(operand_num == 1) {
+
+          argument1 = operand_list.front();
+
+          // Valid operand:
+          if(regex_match(argument1, positive_number)) {
+
+            offset = stoi(argument1);
+
+            for(i = 0; i < offset; i++)
+              machine_code.push_back(0);
+
+            address += offset;
+
+          }
+
+          // Invalid operand:
+          else {
+            print_error(SYNTACTIC, line_num,
+                        "An invalid operand was given to a SPACE directive!");
+            pass2_error = true;
+          }
+
+        } // End of SPACE with argument.
+
+        else {
+          print_error(SYNTACTIC, line_num,
+                      "An invalid number of operands was given!");
+          pass2_error = true;
+        }
+
+      } // End of SPACE.
+
+      // CONST directive.
+      else if(operation == "CONST") {
+
+        // The CONST directive needs to be in the DATA SECTION.
+        if(actual_section != Section::DATA) {
+          print_error(SEMANTIC, line_num,
+                      "A CONST directive was used outside the DATA SECTION!");
+          pass2_error = true;
+        }
+
+        // The CONST directive must have an argument:
+        else if(operand_num == 1) {
+
+          argument1 = operand_list.front();
+
+          // Valid decimal operand:
+          if(regex_match(argument1, signed_number)) {
+            const_value = stoi(argument1);
+
+            if(const_value < -32768 || const_value > 32767) {
+              print_error(SYNTACTIC, line_num,
+                          "A CONST directive operand exceed 16 bits!");
+              pass2_error = true;
+            }
+
+            else {
+              machine_code.push_back(const_value);
+              address++;
+            }
+
+          }
+
+          // Valid hexadecimal number:
+          else if(regex_match(argument1, hex_number)) {
+            const_value = stoul(argument1, nullptr, 16);
+
+            if(const_value > 65535) {
+              print_error(SYNTACTIC, line_num,
+                          "A CONST directive operand exceed 16 bits!");
+              pass2_error = true;
+            }
+
+            else {
+              machine_code.push_back(const_value);
+              address++;
+            }
+
+          }
+
+          // Invalid operand:
+          else {
+            print_error(SYNTACTIC, line_num,
+                        "An invalid operand was given to a CONST directive!");
+            pass2_error = true;
+          }
+
+        } // End of CONST with argument.
+
+        else {
+          print_error(SYNTACTIC, line_num,
+                      "An invalid number of operands was given!");
+          pass2_error = true;
+        }
+
+      } // End of CONST directive.
+
+      // SECTION directive:
+      else if(operation == "SECTION") {
+
+        // Theoretically speaking, we can assume this SECTION statement is
+        // valid due to the first compiling pass. In practice, a quick check
+        // never hurts!
+
+        if(operand_num != 1) {
+          print_error(SYNTACTIC, line_num,
+                      "An invalid number of operands was given!");
+          pass2_error = true;
+        }
+
+        else {
+
+          argument1 = operand_list.front();
+
+          if(argument1 == "TEXT")
+            actual_section = Section::TEXT;
+
+          else if(argument1 == "BSS")
+            actual_section = Section::BSS;
+
+          else if(argument1 == "DATA")
+            actual_section = Section::DATA;
+
+          else {
+            print_error(SYNTACTIC, line_num,
+                        "An invalid operand was given to a SECTION directive!");
+            pass2_error = true;
+          }
+
+        }
+
+      } // End of SECTION directive.
+
+      // BEGIN directive
+      else if(operation == "BEGIN") {
+
+        if(module_start) {
+          print_error(SEMANTIC, line_num,
+                      "Only one BEGIN directive can exist!");
+          pass2_error = true;
+        }
+
+        else if(start_label == "") {
+          print_error(SYNTACTIC, line_num,
+                      "A BEGIN directive needs to be labeled!");
+          pass2_error = true;
+        }
+
+        else if(actual_section != Section::BEGIN) {
+          print_error(SEMANTIC, line_num,
+                      "A BEGIN directive cannot come after any command!");
+          pass2_error = true;
+        }
+
+        else
+          module_start = true;
+
+      } // End of BEGIN directive.
+
+      // END directive
+      else if(operation == "END") {
+        module_end = true;
+        actual_section = Section::END;
       }
 
+      // Invalid operation:
+      else if(operation != "" && operation != "PUBLIC"
+              && operation != "EXTERN") {
+        print_error(SYNTACTIC, line_num,
+                    "Couldn't find any instruction/directive with that name!");
+        pass2_error = true;
+
+      }
+
+      // Note: To the second processing pass, the directives "IF" and "EQU"
+      // shouldn't exist and the directives "PUBLIC" and "EXTERN" aren't useful.
+
+    } // End of valid command.
+
+    // Theoretically speaking, this else should never, EVER be triggered!
+    // Unless you have a line full of spaces or colons.
+    // Did you break my formatting function just to get here?
+    else {
+      print_error(SYNTACTIC, line_num, "Invalid command!");
+      pass2_error = true;
+    }
+
+  }
+
+  valid_module = module_start && module_end;
+
+  // Ok, quick check to see if somebody forgot to BEGIN or END a module!
+  // Remember, either we have both or we have none. Otherwise, it's an error!
+
+  if(module_start != module_end) {
+
+    if(module_start) {
+      print_error(FATAL, 0, "A module needs an END directive!");
+      pass2_error = true;
+    }
+
+    else {
+      print_error(FATAL, 0, "A module needs a BEGIN directive!");
+      pass2_error = true;
     }
 
   }
@@ -680,7 +923,7 @@ int main(int argc, char const *argv[]) {
     exit_program(6);
   }
 
-  cout << "Second compiling pass was successful!" << endl << endl;
+  cout << "::Second compiling pass was successful!" << endl << endl;
 
   // Creates a new file for the compilation output.
   obj_file.open(file_name + ".obj", ios::out);
@@ -705,7 +948,7 @@ int main(int argc, char const *argv[]) {
       for(auto const& address : extern_label.second) {
 
         // For each address, we print a line in the use table.
-        obj_file << label << " " << address;
+        obj_file << label << " " << address << endl;
 
       }
 
@@ -724,7 +967,7 @@ int main(int argc, char const *argv[]) {
       // The second position of the map contains the label's address.
       address = public_label.second;
 
-      obj_file << label << " " << address;
+      obj_file << label << " " << address << endl;
 
     }
 
@@ -733,13 +976,16 @@ int main(int argc, char const *argv[]) {
     // RELATIVE (0 indexed!):
     obj_file << "RELATIVE" << endl;
 
-    for (auto iter = relative_addresses.begin();
-         iter != relative_addresses.end(); iter++) {
+    for(auto iter = relative_addresses.begin();
+        iter != relative_addresses.end(); iter++) {
 
-      if (iter != relative_addresses.begin())
+      if(iter != relative_addresses.begin())
         obj_file << " ";
 
       obj_file << *iter;
+
+      if(iter == prev(relative_addresses.end()))
+        obj_file << endl;
 
     }
 
@@ -761,7 +1007,6 @@ int main(int argc, char const *argv[]) {
 
   obj_file.close();
 
-  cout << "::Second compiling pass was successful!" << endl;
   cout << "::File compilation was successful!" << endl << endl;
 
   // Clean up allocated memory.
