@@ -21,6 +21,13 @@ typedef enum {
 } ErrorType;
 
 typedef enum {
+  JUMP,
+  SPACE,
+  CONST,
+  EXTERN
+} LabelType;
+
+typedef enum {
   BEGIN,
   TEXT,
   DATA,
@@ -56,7 +63,6 @@ int main(int argc, char const *argv[]) {
   // Error flags:
   bool pre_error = false, pass1_error = false, pass2_error = false;
 
-  // TODO Actually check if the program is a module.
   // Module flags:
   bool module_start = false, module_end = false, valid_module = false;
 
@@ -78,9 +84,10 @@ int main(int argc, char const *argv[]) {
   map <string, string> aliases_table;
 
   // Tables generated in the first pass to be used in the second pass
-  map <string, pair<int,bool>> symbols_table;
+  map <string, pair <int, LabelType>> symbols_table;
   map <string, list<int>> use_table;
   map <string, int> definitions_table;
+  map <string, string> constant_table;
 
   // Regular expressions:
   regex command("^(?:(.*): ?)?([^ :]*)(?: (.*))?$");
@@ -89,7 +96,7 @@ int main(int argc, char const *argv[]) {
   regex if_directive("^(.*:)? ?IF(?: (.*))?$");
   regex label_and_offset("^([^\\+]*)(?:\\+([0-9]+))?$");
   regex positive_number("[0-9]+");
-  regex section_directive("^SECTION(?: (.*))?$");
+  regex section_directive("^(?:(.*): ?)?SECTION(?: (.*))?$");
   regex signed_number("-?[0-9]+");
   regex double_label_regex("^(.*):(.*):.*$");
   regex public_directive("^(.*: )?PUBLIC ([^ ,]+)$");
@@ -104,6 +111,9 @@ int main(int argc, char const *argv[]) {
 
   regex find_use("\\b([A-Za-z_0-9]+)\\b");
   smatch uses;
+
+  // Label type indicator
+  LabelType label_type;
 
   // Section indicator
   Section actual_section;
@@ -281,11 +291,11 @@ int main(int argc, char const *argv[]) {
   // First pass:
 
   // TODO Refactor the first pass to utilize the operand_list in address
-  // calculations.
-  // TODO Refactor first pass to include module evaluation.
+  // calculations and to stop checking things that are better left to the
+  // second pass.
 
-  // Address counter
-  address = 0;
+  address = 0;  // Reset address counter.
+  actual_section = Section::BEGIN; // Reset section counter.
 
   // Iterate over pre-processed file
   for(auto const& pair : buffer) {
@@ -301,8 +311,15 @@ int main(int argc, char const *argv[]) {
       }
 
       label = search_matches[1].str();
+      argument1 = search_matches[2].str();
 
-      if(label == "TEXT") {
+      if(label != "") {
+        print_error(SEMANTIC, line_num,
+                    "SECTION directives cannot have labels!");
+        pass1_error = true;
+      }
+
+      else if(argument1 == "TEXT") {
 
         // Only one section declaration can exist!
         if(sections.text != 0) {
@@ -317,7 +334,7 @@ int main(int argc, char const *argv[]) {
 
       }
 
-      else if(label == "DATA") {
+      else if(argument1 == "DATA") {
 
         // The TEXT section has to come first.
         if(sections.text == 0) {
@@ -339,7 +356,7 @@ int main(int argc, char const *argv[]) {
 
       }
 
-      else if(label == "BSS") {
+      else if(argument1 == "BSS") {
 
         // The TEXT section has to come first.
         if(sections.text == 0) {
@@ -423,7 +440,7 @@ int main(int argc, char const *argv[]) {
         pass1_error = true;
       }
       else {
-        symbols_table[label] = make_pair(address, true);
+        symbols_table[label] = make_pair(address, LabelType::EXTERN);
       }
     } // End extern
     // Tests for a generic code line with label
@@ -446,7 +463,20 @@ int main(int argc, char const *argv[]) {
           print_error(SEMANTIC, line_num, "Label was redefined!");
           pass1_error = true;
         } else {
-          symbols_table[label] = make_pair(address, false);
+
+          if(actual_section == Section::DATA) {
+            label_type = LabelType::CONST;
+            constant_table[label] = argument1;
+          }
+
+          else if(actual_section == Section::BSS)
+            label_type = LabelType::SPACE;
+
+          else
+            label_type = LabelType::JUMP;
+
+
+          symbols_table[label] = make_pair(address, label_type);
         }
       }
 
@@ -456,7 +486,7 @@ int main(int argc, char const *argv[]) {
         if(argument1 != "" || argument2 != ""){
           for (auto const& iter : symbols_table ) {
             // If it is extern
-            if(iter.second.second == true){
+            if(iter.second.second == LabelType::EXTERN){
               if(regex_search(argument1, uses, find_use) && uses[1].str() == iter.first){
                 use_table[iter.first].push_back(address+1);
               }
@@ -498,7 +528,7 @@ int main(int argc, char const *argv[]) {
         if(argument1 != "" || argument2 != ""){
           for (auto const& iter : symbols_table ) {
             // If it is extern
-            if(iter.second.second == true){
+            if(iter.second.second == LabelType::EXTERN){
               if (regex_search(argument1, uses, find_use) && uses[1].str() == iter.first){
                 use_table[iter.first].push_back(address+1);
               }
@@ -628,6 +658,7 @@ int main(int argc, char const *argv[]) {
         machine_code.push_back(opcodes_table[operation]->getOpcode());
         address++;
 
+        // Invalid section.
         if(actual_section != Section::TEXT) {
           print_error(SYNTACTIC, line_num,
                       "An instruction was used outside the TEXT SECTION!");
@@ -641,8 +672,10 @@ int main(int argc, char const *argv[]) {
           pass2_error = true;
         }
 
+        // Valid operation.
         else {
 
+          // Operand analysis.
           for(auto const& operand : operand_list) {
 
             if(regex_search(operand, search_matches2, label_and_offset)) {
@@ -676,17 +709,112 @@ int main(int argc, char const *argv[]) {
 
             }
 
-            // TODO Make this error message better (E.g: Label - 1).
-
             else {
               print_error(SYNTACTIC, line_num,
-                          "An invalid operand was given to an instruction!");
+                          "An invalid operand format was used!");
               pass2_error = true;
+            }
+
+          } // End of operand analysis.
+
+          // Even if the instruction and the operands are valid, there are still
+          // some possible bugs that can occur when you match an instruction
+          // with an operand.
+
+          // Jump instructions cannot be to a different section.
+          if(operation == "JMP" || operation == "JMPN" || operation == "JMPP"
+             || operation == "JMPZ") {
+
+            argument1 = operand_list.front();
+
+            // We already checked for bad/inexistant operands, therefore we do
+            // not need to print any errors if this if statement isn't executed.
+            if(symbols_table.count(argument1) > 0) {
+
+              label_type = symbols_table[argument1].second;
+
+              if(label_type == LabelType::CONST ||
+                 label_type == LabelType::SPACE) {
+
+                print_error(SEMANTIC, line_num,
+                            "Jump destination is in another section!");
+                pass2_error = true;
+
+              }
+
+            }
+
+          } // End of jump exceptions.
+
+          // Constants cannot be overwritten - Part I.
+          else if(operation == "STORE" || operation == "INPUT") {
+
+            argument1 = operand_list.front();
+
+            // We already checked for bad/inexistant operands, therefore we do
+            // not need to print any errors if this if statement isn't executed.
+            if(symbols_table.count(argument1) > 0) {
+
+              label_type = symbols_table[argument1].second;
+
+              if(label_type == LabelType::CONST ||
+                 label_type == LabelType::JUMP) {
+
+                print_error(SEMANTIC, line_num,
+                            "You can only save values to the BSS section!");
+                pass2_error = true;
+              }
+
+            }
+
+          } // End of constant exceptions - Part I.
+
+          // Constants cannot be overwritten - Part II.
+          else if(operation == "COPY") {
+
+            argument2 = operand_list.back();
+
+            // We already checked for bad/inexistant operands, therefore we do
+            // not need to print any errors if this if statement isn't executed.
+            if(symbols_table.count(argument2) > 0) {
+
+              label_type = symbols_table[argument2].second;
+
+              if(label_type == LabelType::CONST ||
+                 label_type == LabelType::JUMP) {
+
+                print_error(SEMANTIC, line_num,
+                            "You can only save values to the BSS section!");
+                pass2_error = true;
+              }
+
+            }
+
+          } // End of constant exceptions - Part II.
+
+          // Program cannot divide by 0.
+          else if(operation == "DIV") {
+
+            argument1 = operand_list.front();
+
+            // We already checked for bad/inexistant operands, therefore we do
+            // not need to print any errors if this if statement isn't executed.
+            if(symbols_table.count(argument1) > 0) {
+
+              label_type = symbols_table[argument1].second;
+
+              if(label_type == LabelType::CONST) {
+                if(constant_table[argument1] == "0") {
+                  print_error(SEMANTIC, line_num, "You cannot divide by 0!");
+                  pass2_error = true;
+                }
+              }
+
             }
 
           }
 
-        }
+        } // End of valid instruction.
 
       } // End of instruction.
 
@@ -717,10 +845,20 @@ int main(int argc, char const *argv[]) {
 
             offset = stoi(argument1);
 
-            for(i = 0; i < offset; i++)
-              machine_code.push_back(0);
+            if(offset == 0) {
+              print_error(SYNTACTIC, line_num,
+                          "An invalid operand was given to a SPACE directive!");
+              pass2_error = true;
+            }
 
-            address += offset;
+            else {
+
+              for(i = 0; i < offset; i++)
+                machine_code.push_back(0);
+
+              address += offset;
+
+            }
 
           }
 
@@ -1134,7 +1272,7 @@ list <string> split_string(string delimeter, string input) {
 string format_line(string line) {
 
   regex colon(":"), comment(";.*"), first_space("^ "), last_space(" $");
-  regex offset_plus(" \\+ "), spaces_and_tabs("[ \t]+");
+  regex offset_plus1(" \\+"), offset_plus2("\\+ "), spaces_and_tabs("[ \t]+");
   string formated_line;
 
   // Removes comments and extra tabs and spaces.
@@ -1142,7 +1280,8 @@ string format_line(string line) {
   formated_line = regex_replace(line, comment, "");
   formated_line = regex_replace(formated_line, colon, ": ");
   formated_line = regex_replace(formated_line, spaces_and_tabs, " ");
-  formated_line = regex_replace(formated_line, offset_plus, "+");
+  formated_line = regex_replace(formated_line, offset_plus1, "+");
+  formated_line = regex_replace(formated_line, offset_plus2, "+");
   formated_line = regex_replace(formated_line, first_space, "");
   formated_line = regex_replace(formated_line, last_space, "");
 
@@ -1227,18 +1366,3 @@ string replace_aliases(string line, map <string, string> aliases_table) {
   return modded_line;
 
 }
-
-/*
-Directive list:
-
-* Section: 1 operand, size 0. Delimits sections.
-* Space: 1 operand, size 1. Reserves one or more uninitialized memory spaces.
-* Const: 1 operand, size 1. Reserves one memory space to store a constant.
-* Public: 0 operands, size 0. Indicates that a label is public.
-* Equ: 1 operand, size 0. Creates a text alias for a symbol.
-* If: 1 operand, size 0. If the operand value is 1, include the next code line.
-* Extern: 0 operands, size 0. Indicates that a label is an extern symbol.
-* Begin: 0 operands, size 0. Start a module.
-* End: 0 operands, size 0. Ends a module.
-
-*/
