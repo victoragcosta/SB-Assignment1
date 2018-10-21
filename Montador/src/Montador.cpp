@@ -101,16 +101,10 @@ int main(int argc, char const *argv[]) {
   regex double_label_regex("^(.*):(.*):.*$");
   regex public_directive("^(.*: )?PUBLIC ([^ ,]+)$");
   regex extern_directive("^(.+): EXTERN$");
-
-  // TODO refactor these 2 regexes into 1 with a conditional capture.
-  // TODO refactor the code where they are used.
-  regex label_regex("^(.+): ?([A-Za-z]*)(?: ([^,:\n]*)(?:, ([^,:\n]*))?)?$");
-  regex command_regex("^([A-Za-z]*)(?: ([^,:\n]*)(?:, ([^,:\n]*))?)?$");
+  regex label_regex("^(.*): ?([^ ]*)(?: (.*))?$");
+  regex command_regex("^([^ :]*)(?: (.*))?$");
 
   smatch search_matches, search_matches2;  // Search results.
-
-  regex find_use("\\b([A-Za-z_0-9]+)\\b");
-  smatch uses;
 
   // Label type indicator
   LabelType label_type;
@@ -122,8 +116,8 @@ int main(int argc, char const *argv[]) {
   SectionLines sections;
 
   // Strings:
-  string argument1, argument2, condition, file_name, file_line, formated_line;
-  string label, operation, operands, start_label, value;
+  string arg_label, argument1, argument2, condition, file_name, file_line;
+  string formated_line, label, operation, operands, value;
 
   // Counters
   unsigned int address, line_num, operand_num;
@@ -450,11 +444,21 @@ int main(int argc, char const *argv[]) {
       }
       label = search_matches[1].str();
       operation = search_matches[2].str();
-      argument1 = search_matches[3].str();
-      argument2 = search_matches[4].str();
+      operands = search_matches[3].str();
+
+      if(operands == "")
+        operand_list.clear();
+
+      else
+        operand_list = split_string(", ", operands);
 
       // Adds label to symbols_table if there's one
-      if(label != ""){
+      if(label == "") {
+        print_error(SYNTACTIC, line_num, "Empty label!");
+        pass1_error = true;
+      }
+
+      else {
         if(!valid_label(label)) {
           print_error(SEMANTIC, line_num, "The label is not valid!");
           pass1_error = true;
@@ -482,34 +486,60 @@ int main(int argc, char const *argv[]) {
 
       // Tests if it's a valid operation
       if(opcodes_table.count(operation) > 0){
+
         // Refactor into a function maybe?
-        if(argument1 != "" || argument2 != ""){
-          for (auto const& iter : symbols_table ) {
-            // If it is extern
-            if(iter.second.second == LabelType::EXTERN){
-              if(regex_search(argument1, uses, find_use) && uses[1].str() == iter.first){
-                use_table[iter.first].push_back(address+1);
-              }
-              if(regex_search(argument2, uses, find_use) && uses[1].str() == iter.first){
-                use_table[iter.first].push_back(address+2);
+        if(!operand_list.empty()){
+
+          offset = 1; // The first argument has a single offset.
+
+          for (auto const& operand : operand_list) {
+
+            if(regex_search(operand, search_matches2, label_and_offset)) {
+
+              arg_label = search_matches2[1].str();
+
+              if(symbols_table.count(arg_label) > 0) {
+                if(symbols_table[arg_label].second == LabelType::EXTERN)
+                  use_table[arg_label].push_back(address+offset);
               }
             }
+
+            offset++;
+
           }
+
         }
+
         address += opcodes_table[operation]->getSize();
+
       }
+
       // If not empty, must be a directive
-      else if(operation != "") {
-        if ((operation == "SPACE" && argument1 == "") || operation == "CONST") {
-          address += 1;
-        }
-        else if(operation == "SPACE" && argument1 != "") {
+      else if((operation == "SPACE" && operand_list.empty()) ||
+              operation == "CONST") {
+        address += 1;
+      }
+
+      else if(operation == "SPACE" && !operand_list.empty()) {
+
+        argument1 = operand_list.front();
+
+        if(regex_match(argument1, positive_number))
           address += stoi(argument1);
-        }
-        else if(operation != "BEGIN" && operation != "END") {
-          print_error(SYNTACTIC, line_num, "Invalid directive or operation!");
+
+        // But what if the argument for SPACE isn't a positive number?
+        else {
+          print_error(SYNTACTIC, line_num,
+                      "An invalid operand was given to a SPACE directive!");
           pass1_error = true;
         }
+
+      }
+
+      else if(operation != "BEGIN" && operation != "END" && operation != "") {
+        print_error(SYNTACTIC, line_num,
+                    "Couldn't find any instruction/directive with that name!");
+        pass1_error = true;
       }
 
     } // End code with generic code line with label
@@ -519,42 +549,74 @@ int main(int argc, char const *argv[]) {
         cout << line_num << " COMMAND" << endl;
       }
       operation = search_matches[1].str();
-      argument1 = search_matches[2].str();
-      argument2 = search_matches[3].str();
+      operands = search_matches[2].str();
+
+      if(operands == "")
+        operand_list.clear();
+
+      else
+        operand_list = split_string(", ", operands);
 
       // Tests if it's a valid operation
       if(opcodes_table.count(operation) > 0){
+
         // Refactor into a function maybe?
-        if(argument1 != "" || argument2 != ""){
-          for (auto const& iter : symbols_table ) {
-            // If it is extern
-            if(iter.second.second == LabelType::EXTERN){
-              if (regex_search(argument1, uses, find_use) && uses[1].str() == iter.first){
-                use_table[iter.first].push_back(address+1);
-              }
-              if(regex_search(argument2, uses, find_use) && uses[1].str() == iter.first){
-                use_table[iter.first].push_back(address+2);
+        if(!operand_list.empty()){
+
+          offset = 1; // The first argument has a single offset.
+
+          for (auto const& operand : operand_list) {
+
+            if(regex_search(operand, search_matches2, label_and_offset)) {
+
+              arg_label = search_matches2[1].str();
+
+              if(symbols_table.count(arg_label) > 0) {
+                if(symbols_table[arg_label].second == LabelType::EXTERN)
+                  use_table[arg_label].push_back(address+offset);
               }
             }
+
+            offset++;
+
           }
+
         }
+
         address += opcodes_table[operation]->getSize();
+
       }
+
       // If not empty, must be a directive
-      else if(operation != "") {
-        if ((operation == "SPACE" && argument1 == "") || operation == "CONST") {
-          address += 1;
-        }
-        else if(operation == "SPACE" && argument1 != "") {
+      else if((operation == "SPACE" && operand_list.empty()) ||
+              operation == "CONST") {
+        address += 1;
+      }
+
+      else if(operation == "SPACE" && !operand_list.empty()) {
+
+        argument1 = operand_list.front();
+
+        if(regex_match(argument1, positive_number))
           address += stoi(argument1);
-        }
-        else if(operation != "BEGIN" && operation != "END") {
-          print_error(SYNTACTIC, line_num, "Invalid directive or operation!");
+
+        // But what if the argument for SPACE isn't a positive number?
+        else {
+          print_error(SYNTACTIC, line_num,
+                      "An invalid operand was given to a SPACE directive!");
           pass1_error = true;
         }
+
+      }
+
+      else if(operation != "BEGIN" && operation != "END") {
+        print_error(SYNTACTIC, line_num,
+                    "Couldn't find any instruction/directive with that name!");
+        pass1_error = true;
       }
 
     } // End code with generic code line without label
+
     else {
       if (DEBUG) {
         cout << line_num << " ELSE" << endl;
@@ -640,7 +702,7 @@ int main(int argc, char const *argv[]) {
     // Valid command (This should always match...)!
     if(regex_search(formated_line, search_matches, command)) {
 
-      start_label = search_matches[1].str();  // Some commands NEED labels...
+      label = search_matches[1].str();  // Some commands NEED labels...
       operation = search_matches[2].str();
       operands = search_matches[3].str();
 
@@ -680,7 +742,7 @@ int main(int argc, char const *argv[]) {
 
             if(regex_search(operand, search_matches2, label_and_offset)) {
 
-              label = search_matches2[1].str();
+              arg_label = search_matches2[1].str();
 
               if(search_matches2[2].str() == "")
                 offset = 0;
@@ -695,8 +757,8 @@ int main(int argc, char const *argv[]) {
               // The result is stored as machine code.
               // Finally, we update the machine code address.
 
-              if(symbols_table.count(label) > 0) {
-                machine_code.push_back(symbols_table[label].first + offset);
+              if(symbols_table.count(arg_label) > 0) {
+                machine_code.push_back(symbols_table[arg_label].first + offset);
                 relative_addresses.push_back(address);
                 address++;
               }
@@ -990,7 +1052,7 @@ int main(int argc, char const *argv[]) {
           pass2_error = true;
         }
 
-        else if(start_label == "") {
+        else if(label == "") {
           print_error(SYNTACTIC, line_num,
                       "A BEGIN directive needs to be labeled!");
           pass2_error = true;
@@ -1013,13 +1075,12 @@ int main(int argc, char const *argv[]) {
         actual_section = Section::END;
       }
 
-      // Invalid operation:
+      // Invalid operation (The first processing pass should have caught this):
       else if(operation != "" && operation != "PUBLIC"
               && operation != "EXTERN") {
         print_error(SYNTACTIC, line_num,
                     "Couldn't find any instruction/directive with that name!");
         pass2_error = true;
-
       }
 
       // Note: To the second processing pass, the directives "IF" and "EQU"
