@@ -37,6 +37,7 @@
 *.exe
 *.out
 *.app
+*.e
 
 # Program output
 *.pre

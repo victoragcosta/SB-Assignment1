@@ -39,6 +39,10 @@ int main(int argc, char const *argv[])
 
   map<string, int> global_definitions_table;
 
+  vector<int> output_code;
+  string output_name;
+  fstream output_file;
+
   // Opens each file
   for(int i = 1; i < argc; i++) {
     objs.push_back(new Modulo(string(argv[i])));
@@ -85,6 +89,28 @@ int main(int argc, char const *argv[])
     objs[i]->fixRelativeAddresses(correction_table[i]);
   }
 
+  output_code = concatenateCodes(objs);
+
+  output_name = argv[1]; // Outputfile is name of the first file
+  output_name += ".e"; // followed by .e
+
+  output_file.open(output_name, ios::out);
+  if(!output_file.is_open()) {
+    cout << "Erro: não é possível criar arquivo de saída " << output_name << endl;
+    exit(4);
+  }
+
+  for(auto const& i : output_code) {
+    output_file << i << " ";
+  }
+  output_file << endl;
+
+  // Clean up (free allocated memory)
+  for(auto const& obj : objs) {
+    delete obj;
+  }
+  output_file.close();
+
   return 0;
 
 }
@@ -130,5 +156,13 @@ void printVectorInt(vector<int> items)
 
 vector<int> concatenateCodes(vector<Modulo*> objs)
 {
-  // TODO concatenar codes de vários módulos
+  vector<int> code;
+
+  for(auto const& obj : objs) {
+    for(auto const& code_byte : obj->getCode()) {
+      code.push_back(code_byte);
+    }
+  }
+
+  return code;
 }
