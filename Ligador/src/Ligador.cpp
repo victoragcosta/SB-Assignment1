@@ -11,7 +11,7 @@
 #include "Modulo.hpp"
 
 // Defines:
-#define DEBUG 1
+#define DEBUG 0
 
 // Namespace:
 using namespace std;
@@ -91,6 +91,11 @@ int main(int argc, char const *argv[])
 
   output_code = concatenateCodes(objs);
 
+  if(DEBUG >= 1) {
+    cout << "Outputted Code" << endl;
+    printVectorInt(output_code);
+  }
+
   output_name = argv[1]; // Outputfile is name of the first file
   output_name += ".e"; // followed by .e
 
@@ -110,6 +115,8 @@ int main(int argc, char const *argv[])
     delete obj;
   }
   output_file.close();
+
+  cout << "Arquivo ligado e salvo em: " << output_name << endl;
 
   return 0;
 

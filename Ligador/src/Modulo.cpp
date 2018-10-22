@@ -7,7 +7,7 @@
 #include <iomanip>
 #include <algorithm>
 
-#define DEBUG 1
+#define DEBUG 0
 
 typedef enum {
   NONE,
@@ -53,7 +53,7 @@ void Modulo::parse()
   regex relative_regex("^RELATIVE$");
   regex code_regex("^CODE$");
   regex blank_line_regex("^[ \t]*$");
-  regex label_address_regex("^([A-Za-z][A-Za-z\\d]*) (\\d+)$");
+  regex label_address_regex("^([A-Za-z_][A-Za-z_\\d]*) (\\d+)$");
   //regex multiple_numbers_regex("^(\\d+)+$");
 
   smatch search_matches;
@@ -63,7 +63,7 @@ void Modulo::parse()
   // Iterates over all .obj lines
   while(getline(obj_file, file_line)) {
 
-    if(DEBUG >= 1){
+    if(DEBUG >= 2){
       cout << file_line << endl;
     }
     // Finds TABLE DEFINITION
@@ -124,7 +124,7 @@ void Modulo::parse()
       }
     }
   }
-  if (DEBUG >= 1) {
+  if (DEBUG >= 2) {
     cout << endl;
   }
 }
@@ -210,6 +210,7 @@ int Modulo::getCodeSize()
 
 void Modulo::printAllData()
 {
+  cout << obj_name << endl << endl;
   cout << "TABLE USE" << endl;
   printUseTable(use_table);
   cout << "TABLE DEFINITION" << endl;
