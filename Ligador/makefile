@@ -18,16 +18,16 @@ SDIR = src
 
 # Lista de dependências do projeto (arquivos .h).
 
-_DEPS =
+_DEPS = Modulo.hpp
 
 # Lista de arquivos intermediários de compilação gerados pelo projeto
 # (arquivos .o).
 
-_OBJ = Ligador.o
+_OBJ = Ligador.o Modulo.o
 
 # Lista de arquivos fontes utilizados para compilação.
 
-_SRC = Ligador.cpp
+_SRC = Ligador.cpp Modulo.cpp
 
 # Junção dos nomes de arquivos com seus respectivos caminhos.
 
