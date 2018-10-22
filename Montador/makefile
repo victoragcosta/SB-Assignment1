@@ -1,6 +1,6 @@
 # Nome do executável do projeto.
 
-EXE = Montador
+EXE = montador
 
 # Nome do compilador, extensão dos arquivos source e dados de compilação
 # (flags e bibliotecas).

@@ -14,16 +14,20 @@ Victor André Gris Costa | 16/0019311 | WSL Ubuntu 14.04 no Windows 10 64-bit
 
 ## Compilação e Execução do Código:
 
-Para compilar o código do montador basta acessar a pasta /Montador e execute o comando make.
+Para compilar o código do montador basta acessar a pasta ```/Montador``` e execute o comando make.
 
-Para executar o montador basta chamar ```./Montador nome_do_arquivo_sem_asm``` na pasta /Montador e ele gerará os arquivos *.pre e *.obj na mesma pasta que está.
+Para executar o montador basta chamar ```./montador nome_do_arquivo_sem_asm``` na pasta ```/Montador``` e ele gerará os arquivos *.pre e *.obj na mesma pasta que o arquivo está.
 
-Para compilar o código do ligador basta acessar a pasta /Ligador e execute o comando make.
+Para compilar o código do ligador basta acessar a pasta ```/Ligador``` e execute o comando make.
 
-Para executar o ligador basta chamar ```./Ligador arquivo1 arquivo2 arquivo3 arquivo4``` na pasta /Ligador e ele gerará os arquivos *.e na mesma pasta que está.
+Para executar o ligador basta chamar ```./ligador arquivo1 arquivo2 arquivo3 arquivo4``` na pasta ```/Ligador``` e ele gerará os arquivos *.e na mesma pasta que o arquivo está.
 
+**Observação 1:** Os arquivos deve possuir a terminação de linha Linux (LF ou \n) para o montador e ligador funcionarem.
+
+**Observação 2:** O ligador consegue lidar com mais de 4 arquivos .obj.
+
+<!--
 ---
-
 ## Tratamento de Erros
 ### Passagem 0:
 
@@ -58,3 +62,5 @@ Para executar o ligador basta chamar ```./Ligador arquivo1 arquivo2 arquivo3 arq
   * [ ] pulo para seção errada
   * [ ] diretivas ou instruções na seção errada
   * [ ] modificação de um valor constante
+
+-->
