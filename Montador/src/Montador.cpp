@@ -374,7 +374,7 @@ int main(int argc, char const *argv[]) {
 
       // Empty section directive.
 
-      else if(label == "") {
+      else if(argument1 == "") {
         print_error(SYNTACTIC, line_num, "Empty SECTION directive!");
         pass1_error = true;
       }
