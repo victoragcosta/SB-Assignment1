@@ -1,6 +1,6 @@
 # Nome do executável do projeto.
 
-EXE = Montador
+EXE = montador
 
 # Nome do compilador, extensão dos arquivos source e dados de compilação
 # (flags e bibliotecas).
@@ -19,16 +19,16 @@ SDIR = src
 
 # Lista de dependências do projeto (arquivos .h).
 
-_DEPS =
+_DEPS = Operation.hpp
 
 # Lista de arquivos intermediários de compilação gerados pelo projeto
 # (arquivos .o).
 
-_OBJ = Montador.o
+_OBJ = Montador.o Operation.o
 
 # Lista de arquivos fontes utilizados para compilação.
 
-_SRC = Montador.cpp
+_SRC = Montador.cpp Operation.cpp
 
 # Junção dos nomes de arquivos com seus respectivos caminhos.
 

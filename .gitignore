@@ -11,6 +11,9 @@
 *.gch
 *.pch
 
+#VSCode Specific
+.vscode
+
 # Compiled Dynamic libraries
 *.so
 *.dylib
@@ -27,6 +30,14 @@
 *.lib
 
 # Executables
+*/Montador
+*/montador
+*/Ligador
+*/ligador
 *.exe
 *.out
 *.app
+*.e
+
+# Program output
+*.pre
